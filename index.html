@@ -54,7 +54,9 @@ svg.board{display:block;width:100%;height:auto}
 .filters button.on{background:var(--accent);color:#05221f;border-color:var(--accent)}
 .list-item{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin-bottom:8px;cursor:pointer}
 .tstatic{display:flex;gap:2px;flex-wrap:wrap}.tstatic .tw{width:22px}.tw{position:relative}
-.tile{display:block;width:100%;height:auto}
+img.tile{display:block;width:100%;height:auto;background:#fff;padding:6%;border-radius:11%;box-sizing:border-box;filter:brightness(92%) saturate(80%);box-shadow:inset 0 0 2px rgba(0,0,0,.45)}
+svg.board image{filter:brightness(92%) saturate(80%)}
+svg.board image.tsu{filter:brightness(75%) saturate(80%)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(80px + var(--safe-b));background:#08262a;
   border:1px solid var(--line);padding:10px 14px;border-radius:12px;z-index:99;max-width:92%;font-size:13px;box-shadow:0 6px 24px rgba(0,0,0,.4)}
 .expl{background:#0a262a;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:14px;margin-top:10px;white-space:pre-wrap}
@@ -64,6 +66,9 @@ summary{cursor:pointer;font-size:13px;font-weight:700}
 @keyframes sp{to{transform:rotate(360deg)}}
 .cand{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.06)}
 .cand .bar{height:8px;border-radius:4px;background:var(--accent)}
+table.diag{width:100%;font-size:13px;border-collapse:collapse}
+table.diag td{padding:4px 0;vertical-align:top;border-bottom:1px solid rgba(255,255,255,.06)}
+table.diag td:first-child{color:var(--muted);width:38%}
 img.shot{width:100%;border-radius:10px;border:1px solid var(--line)}
 .queue-item{border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px;background:#0d383d}
 </style>
@@ -109,67 +114,142 @@ function tileName(t){ if(!t) return '―'; const s=t[1],n=t[0];
   const j={m:'萬',p:'筒',s:'索'}[s]; return n==='0'? '赤5'+j : n+j; }
 const loose=t=>t? (t[0]==='0'? '5'+t[1]:t):t;
 
-/* ---- 牌のSVG ---- */
-function bgRect(red){return `<rect x="1.2" y="1.2" width="57.6" height="81.6" rx="7" fill="${red?'#fff2f2':'#fbf8ef'}" stroke="#b9ad92" stroke-width="1.6"/><rect x="3.4" y="3.4" width="53.2" height="77.2" rx="5" fill="none" stroke="#fff" stroke-width="1" opacity=".8"/>`;}
-function tx(x,y,sz,f,s){return `<text x="${x}" y="${y}" text-anchor="middle" font-size="${sz}" fill="${f}" font-weight="700" font-family="'Hiragino Mincho ProN','Yu Mincho',serif">${s}</text>`;}
-function dot(cx,cy,r,ring,core){return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#fff" stroke="${ring}" stroke-width="${Math.max(1.5,r*.36)}"/><circle cx="${cx}" cy="${cy}" r="${r*.34}" fill="${core}"/>`;}
-function stick(cx,cy,h,c){const w=8.6;return `<rect x="${cx-w/2}" y="${cy-h/2}" width="${w}" height="${h}" rx="${w/2}" fill="${c}"/><rect x="${cx-1.6}" y="${cy-h/2+3}" width="3.2" height="${h-6}" rx="1.6" fill="#fff" opacity=".45"/>`;}
-const PL={1:[[30,42,15]],2:[[30,25,9],[30,59,9]],3:[[15,22,8],[30,42,8],[45,62,8]],
-4:[[18,25,9],[42,25,9],[18,59,9],[42,59,9]],5:[[18,25,9],[42,25,9],[30,42,9],[18,59,9],[42,59,9]],
-6:[[18,22,8],[42,22,8],[18,42,8],[42,42,8],[18,62,8],[42,62,8]],
-7:[[14,19,7],[30,19,7],[46,19,7],[18,43,8],[42,43,8],[18,64,8],[42,64,8]],
-8:[[18,17,7.4],[42,17,7.4],[18,35,7.4],[42,35,7.4],[18,53,7.4],[42,53,7.4],[18,71,7.4],[42,71,7.4]],
-9:[[15,21,7.4],[30,21,7.4],[45,21,7.4],[15,42,7.4],[30,42,7.4],[45,42,7.4],[15,63,7.4],[30,63,7.4],[45,63,7.4]]};
-const SL={2:[[30,25,30],[30,59,30]],3:[[30,20,26],[20,57,26],[40,57,26]],
-4:[[19,25,28],[41,25,28],[19,59,28],[41,59,28]],5:[[19,24,26],[41,24,26],[30,42,26],[19,60,26],[41,60,26]],
-6:[[14,25,28],[30,25,28],[46,25,28],[14,59,28],[30,59,28],[46,59,28]],
-7:[[30,17,22],[14,45,22],[30,45,22],[46,45,22],[14,70,22],[30,70,22],[46,70,22]],
-8:[[14,25,28],[26,25,28],[38,25,28],[50,25,28],[14,59,28],[26,59,28],[38,59,28],[50,59,28]],
-9:[[15,20,20],[30,20,20],[45,20,20],[15,42,20],[30,42,20],[45,42,20],[15,64,20],[30,64,20],[45,64,20]]};
-const faceCache={};
-function face(code){
-  if(faceCache[code]) return faceCache[code];
-  const red=code[0]==='0', n=red?5:parseInt(code[0],10), su=code[1];
-  let inner='';
-  if(su==='m'){ inner=tx(30,44,36,red?'#c62828':'#1a1a1a',KANJI[n])+tx(30,74,22,'#b3261e','萬'); }
-  else if(su==='p'){
-    if(n===1) inner=`<circle cx="30" cy="42" r="16" fill="#fff" stroke="#1f6fb2" stroke-width="3.4"/><circle cx="30" cy="42" r="10" fill="#fff" stroke="#c0392b" stroke-width="3"/><circle cx="30" cy="42" r="4" fill="#1f6fb2"/>`;
-    else inner=PL[n].map(([x,y,r],i)=>{const mid=red&&n===5&&i===2;return dot(x,y,r,mid?'#c62828':'#1f6fb2',mid?'#c62828':'#c0392b');}).join('');
-  } else if(su==='s'){
-    if(n===1) inner=`<ellipse cx="30" cy="52" rx="13" ry="17" fill="#177a3d"/><circle cx="30" cy="27" r="9" fill="#177a3d"/><circle cx="33" cy="25" r="2" fill="#fff"/><path d="M39 28 L48 31 L39 34 Z" fill="#c0392b"/><path d="M30 68 L23 80 L37 80 Z" fill="#c0392b"/>`;
-    else inner=SL[n].map(([x,y,h],i)=>stick(x,y,h,((red&&n===5&&i===2)||(n===5&&i===2)||(n===7&&i===0))?'#c0392b':'#177a3d')).join('');
-  } else {
-    if(n===5) inner=`<rect x="13" y="15" width="34" height="54" rx="3" fill="none" stroke="#2b6ea8" stroke-width="3"/>`;
-    else inner=tx(30,58,42,n===6?'#177a3d':(n===7?'#c0392b':'#222'),HONOR[n]);
-  }
-  return faceCache[code]=bgRect(red)+inner;
+/* ---- 牌の画像（Mortal と同じ CC0 素材: FluffyStuff/riichi-mahjong-tiles Regular） ----
+   本家（mjai.ekyu.moe）と同じ見た目にするため、寸法と色味も本家CSSに合わせている
+   ・牌全体 34 : 42(=絵柄30x40 + 余白2px)  ・角丸4px  ・地色 白 + brightness(92%) saturate(80%)
+------------------------------------------------------------------------------------ */
+const TILEDIR='tiles/';
+const TILE_AR=44/34, TILE_PAD=2/34, TILE_R=4/34;
+const tileURL=code=>TILEDIR+code+'.svg';
+// HTML用
+function tileSVG(code){ return `<img class="tile" src="${tileURL(code)}" alt="${esc(tileName(code))}" loading="lazy">`; }
+function tilesHTML(list,st){ return `<div class="tstatic" ${st?'style="'+st+'"':''}>`+list.map(t=>`<div class="tw">${tileSVG(t)}</div>`).join('')+`</div>`; }
+// 卓図（SVG）用: 任意位置・サイズ・回転で牌を置く
+function put(t,x,y,w,rot,extra,tsu){
+  const h=w*TILE_AR, p=w*TILE_PAD, iw=w-2*p, ih=iw*4/3, r=w*TILE_R, u=tileURL(t);
+  return `<g transform="translate(${x},${y})${rot?` rotate(${rot} ${w/2} ${h/2})`:''}">`
+    + `<rect width="${w}" height="${h}" rx="${r}" fill="${tsu?'#bfb0a0':'#ebebeb'}"/>`
+    + `<image${tsu?' class="tsu"':''} href="${u}" xlink:href="${u}" x="${p}" y="${p}" width="${iw}" height="${ih}"/>`
+    + `<rect x="${r*0.12}" y="${r*0.12}" width="${w-r*0.24}" height="${h-r*0.24}" rx="${r}" fill="none" stroke="rgba(0,0,0,.28)" stroke-width="${Math.max(.6,w*0.022)}"/>`
+    + (extra||'') + `</g>`;
 }
-function tileSVG(code){return `<svg class="tile" viewBox="0 0 60 84">${face(code)}</svg>`;}
-function tilesHTML(list,st){return `<div class="tstatic" ${st?'style="'+st+'"':''}>`+list.map(t=>`<div class="tw">${tileSVG(t)}</div>`).join('')+`</div>`;}
-// 卓図用: 任意位置・サイズ・回転で牌を置く
-function put(t,x,y,w,rot,extra){
-  const h=w*84/60;
-  const g=`<g transform="translate(${x},${y})${rot?` rotate(${rot} ${w/2} ${h/2})`:''}"><g transform="scale(${w/60})">${face(t)}</g>${extra||''}</g>`;
-  return g;
-}
-function putBack(x,y,w,rot){
-  const h=w*84/60;
-  return `<g transform="translate(${x},${y})${rot?` rotate(${rot} ${w/2} ${h/2})`:''}"><g transform="scale(${w/60})"><rect x="1.2" y="1.2" width="57.6" height="81.6" rx="7" fill="#8e2b2b" stroke="#6d1f1f" stroke-width="1.6"/><rect x="9" y="9" width="42" height="66" rx="4" fill="none" stroke="#a94b4b" stroke-width="2"/></g></g>`;
-}
+function putBack(x,y,w,rot){ return put('back',x,y,w,rot); }
 
-/* ========================= 保存 ========================= */
-const DB='mahjong-quiz', STORE='problems'; let _db=null;
-function db(){ if(_db) return Promise.resolve(_db);
-  return new Promise((res,rej)=>{ const r=indexedDB.open(DB,1);
-    r.onupgradeneeded=e=>{const d=e.target.result; if(!d.objectStoreNames.contains(STORE)){const os=d.createObjectStore(STORE,{keyPath:'id'});os.createIndex('createdAt','createdAt');}};
-    r.onsuccess=()=>{_db=r.result;res(_db);}; r.onerror=()=>rej(r.error); }); }
-const os=m=>db().then(d=>d.transaction(STORE,m).objectStore(STORE));
-const req=p=>new Promise((res,rej)=>{p.onsuccess=()=>res(p.result);p.onerror=()=>rej(p.error);});
-const dbAll=()=>os('readonly').then(o=>req(o.getAll())).then(a=>a||[]);
-const dbGet=id=>os('readonly').then(o=>req(o.get(id)));
-const dbPut=r=>os('readwrite').then(o=>req(o.put(r))).then(()=>r);
-const dbDel=id=>os('readwrite').then(o=>req(o.delete(id)));
-const dbClear=()=>os('readwrite').then(o=>req(o.clear()));
+/* ========================= 保存（IndexedDB + localStorage の二重保存） =========================
+   ・全レコードをメモリに読み込んで動作させ、変更は IndexedDB と localStorage の両方へ書く
+   ・片方が使えない／消えても、もう片方から自動復元する
+   ・取り込み元URLと学習状況は別枠でも保存し、最悪の場合もワンタップで作り直せる
+============================================================================================ */
+const DBN='mahjong-quiz', STORE='problems';
+const LS_DB='mq.db.v1', LS_STAT='mq.stat.v1', LS_SRC='mq.src.v1';
+let _db=null, MEM=new Map(), DIRTY=new Set(), DELETED=new Set(), saveTimer=null;
+const DIAG={idb:'未確認', ls:'未確認', persisted:null, lastSaveAt:null, lastError:null, restored:0, quota:null, usage:null};
+
+function idbOpen(){
+  if(_db) return Promise.resolve(_db);
+  return new Promise((res,rej)=>{
+    let r; try{ r=indexedDB.open(DBN,1); }catch(e){ return rej(e); }
+    r.onupgradeneeded=e=>{ const d=e.target.result;
+      if(!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE,{keyPath:'id'}); };
+    r.onsuccess=()=>{ _db=r.result;
+      _db.onclose=()=>{ _db=null; };
+      _db.onversionchange=()=>{ try{_db.close()}catch(e){} _db=null; };
+      res(_db); };
+    r.onerror=()=>rej(r.error||new Error('open failed'));
+    r.onblocked=()=>rej(new Error('blocked'));
+  });
+}
+function idbTx(mode,fn){
+  return idbOpen().then(d=>new Promise((res,rej)=>{
+    let tx; try{ tx=d.transaction(STORE,mode); }catch(e){ _db=null; return rej(e); }
+    let out; try{ out=fn(tx.objectStore(STORE)); }catch(e){ return rej(e); }
+    tx.oncomplete=()=>res(out&&typeof out==='object'&&'result' in out? out.result : out);
+    tx.onerror=()=>rej(tx.error||new Error('tx error'));
+    tx.onabort=()=>rej(tx.error||new Error('tx abort'));
+  }));
+}
+// 接続が閉じられていた場合に1度だけ開き直して再試行する
+function idbTry(mode,fn){
+  return idbTx(mode,fn).catch(e=>{ _db=null; return idbTx(mode,fn); });
+}
+function lsGet(k,d){ try{ const v=localStorage.getItem(k); return v==null?d:JSON.parse(v); }catch(e){ return d; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); return true; }catch(e){ DIAG.lastError='LS: '+(e.message||e); return false; } }
+
+function mergeRec(r){
+  if(!r||!r.id) return;
+  const cur=MEM.get(r.id);
+  if(!cur){ MEM.set(r.id,r); return; }
+  const ta=cur.updatedAt||cur.lastAnsweredAt||cur.createdAt||0;
+  const tb=r.updatedAt||r.lastAnsweredAt||r.createdAt||0;
+  const win=Object.assign({}, tb>=ta? r : cur);
+  if(!win.image && (cur.image||r.image)) win.image=cur.image||r.image;
+  MEM.set(r.id,win);
+}
+async function loadAll(){
+  let fromIdb=[], fromLs=[];
+  try{ fromIdb=(await idbTry('readonly',st=>st.getAll()))||[]; DIAG.idb='OK（'+fromIdb.length+'件）'; }
+  catch(e){ DIAG.idb='使用不可（'+(e.message||e)+'）'; }
+  try{ fromLs=lsGet(LS_DB,[])||[]; DIAG.ls='OK（'+fromLs.length+'件）'; }
+  catch(e){ DIAG.ls='使用不可'; }
+  MEM=new Map();
+  fromLs.forEach(mergeRec); fromIdb.forEach(mergeRec);
+  // 学習状況の軽量バックアップで上書き補完
+  const stat=lsGet(LS_STAT,{})||{};
+  MEM.forEach(r=>{ const t=stat[r.id];
+    if(t && (t[4]||0)>(r.lastAnsweredAt||0)){ r.status=t[0]; r.review=!!t[1]; r.correctCount=t[2]||0; r.wrongCount=t[3]||0; r.lastAnsweredAt=t[4]||null; } });
+  // 片方にしか無いレコードは書き戻す
+  const inIdb=new Set(fromIdb.map(r=>r.id)), inLs=new Set(fromLs.map(r=>r.id));
+  let need=false;
+  MEM.forEach(r=>{ if(!inIdb.has(r.id)||!inLs.has(r.id)){ DIRTY.add(r.id); need=true; } });
+  DIAG.restored=Math.max(0, MEM.size-fromIdb.length);
+  if(need) flush();
+  try{ if(navigator.storage&&navigator.storage.estimate){ const e=await navigator.storage.estimate(); DIAG.usage=e.usage; DIAG.quota=e.quota; } }catch(e){}
+}
+function saveSoon(ms){ clearTimeout(saveTimer); saveTimer=setTimeout(flush, ms==null?350:ms); }
+async function flush(){
+  clearTimeout(saveTimer);
+  const recs=[...MEM.values()];
+  const stat={}; recs.forEach(r=>{ stat[r.id]=[r.status,r.review?1:0,r.correctCount||0,r.wrongCount||0,r.lastAnsweredAt||0]; });
+  lsSet(LS_STAT,stat);
+  if(lsSet(LS_DB, recs.map(r=>{ const c=Object.assign({},r); delete c.image; return c; }))) DIAG.ls='OK（'+recs.length+'件）';
+  else DIAG.ls='書き込み失敗（容量超過など）';
+  const ids=[...DIRTY], dels=[...DELETED];
+  if(ids.length||dels.length){
+    try{
+      await idbTry('readwrite',st=>{ ids.forEach(id=>{ const r=MEM.get(id); if(r) st.put(r); }); dels.forEach(id=>st.delete(id)); });
+      DIRTY.clear(); DELETED.clear(); DIAG.lastSaveAt=Date.now(); DIAG.idb='OK（'+MEM.size+'件）';
+    }catch(e){ DIAG.lastError='IDB: '+(e.message||e); DIAG.idb='書き込み失敗（'+(e.message||e)+'）'; }
+  } else DIAG.lastSaveAt=Date.now();
+}
+const dbAll=async()=>[...MEM.values()];
+const dbGet=async id=>MEM.get(id);
+const dbPut=async r=>{ r.updatedAt=Date.now(); MEM.set(r.id,r); DIRTY.add(r.id); DELETED.delete(r.id); saveSoon(); return r; };
+const dbDel=async id=>{ MEM.delete(id); DIRTY.delete(id); DELETED.add(id); saveSoon(0); };
+const dbClear=async()=>{ MEM.forEach((v,k)=>DELETED.add(k)); MEM.clear(); DIRTY.clear();
+  try{ localStorage.removeItem(LS_DB); localStorage.removeItem(LS_STAT); }catch(e){} await flush(); };
+// 取り込み元URLの控え（データが消えてもワンタップで復元できる）
+const getSources=()=>lsGet(LS_SRC,[])||[];
+// 取り込み直したレコードに、残っている学習状況を復元する
+function applySavedStatus(r){
+  const t=(lsGet(LS_STAT,{})||{})[r.id];
+  if(t){ r.status=t[0]||'new'; r.review=!!t[1]; r.correctCount=t[2]||0; r.wrongCount=t[3]||0; r.lastAnsweredAt=t[4]||null; }
+  return r;
+}
+function addSource(src){
+  const l=getSources().filter(x=>x.reportId!==src.reportId);
+  l.unshift(src); lsSet(LS_SRC,l.slice(0,80));
+}
+async function askPersist(){
+  try{
+    if(!navigator.storage) return;
+    if(navigator.storage.persisted) DIAG.persisted=await navigator.storage.persisted();
+    if(!DIAG.persisted && navigator.storage.persist) DIAG.persisted=await navigator.storage.persist();
+  }catch(e){}
+}
+// 離脱・バックグラウンド時に取りこぼしを書き切る
+addEventListener('pagehide',()=>{ try{ flush(); }catch(e){} });
+addEventListener('beforeunload',()=>{ try{ flush(); }catch(e){} });
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden'){ try{ flush(); }catch(e){} } });
 
 const CFG={
   get key(){return localStorage.getItem('mq.apikey')||''}, set key(v){localStorage.setItem('mq.apikey',v)},
@@ -318,14 +398,14 @@ function extractProblems(rep,srcUrl,reportId){
 /* ========================= 卓図（マスク／答え表示） ========================= */
 const W=720;
 function riverBlock(list,cx,cy,rot,tw){
-  const cols=6, gap=2, th=tw*84/60;
+  const cols=6, gap=2, th=tw*TILE_AR;
   const rows=Math.max(1,Math.ceil(list.length/cols));
   const bw=cols*(tw+gap)-gap, bh=rows*(th+gap)-gap;
   let s=`<g transform="translate(${cx},${cy}) rotate(${rot}) translate(${-bw/2},${-bh/2})">`;
   list.forEach((o,i)=>{
     const c=i%cols, r=Math.floor(i/cols);
     const x=c*(tw+gap), y=r*(th+gap);
-    s+=put(o.pai,x,y,tw,o.r?90:0);
+    s+=put(o.pai,x,y,tw,o.r?90:0,'',o.t);
   });
   return s+'</g>';
 }
@@ -341,7 +421,7 @@ function boardSVG(rec,reveal){
   const H=770;
   const myWind=(4-((st.oyaRel!=null)?st.oyaRel:0))%4;
   const wd=['東','南','西','北'];
-  let s=`<svg class="board" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  let s=`<svg class="board" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">`;
   s+=`<rect width="${W}" height="${H}" rx="14" fill="#0d4247"/>`;
   // ドラ表示
   if(st.dora&&st.dora.length){
@@ -378,7 +458,7 @@ function boardSVG(rec,reveal){
   if(fu[3]&&fu[3].length) s+=meldGroup(fu[3],62,466,26);
   if(fu[1]&&fu[1].length) s+=meldGroup(fu[1],470,466,26);
   // 自分の手牌
-  const tw=46, th=tw*84/60, hy=640, gap=2, n=all.length;
+  const tw=46, th=tw*TILE_AR, hy=640, gap=2, n=all.length;
   const totalW=n*(tw+gap)-gap+(drawn?14:0);
   let x0=(W-totalW)/2; const xs=[];
   for(let i=0;i<n;i++){ xs.push(x0); x0+=tw+gap+((drawn&&i===n-2)?14:0); }
@@ -589,6 +669,11 @@ function renderAdd(){
     </details>
   </div>
   <div class="card">
+    <h2>取り込み済みのURL</h2>
+    <p class="small muted">端末のデータが消えても、ここから作り直せます（学習状況も自動で戻ります）。</p>
+    <div id="srcs"></div>
+  </div>
+  <div class="card">
     <h2>スクリーンショットから取り込む（任意）</h2>
     <p class="small muted">牌譜画面の画像をClaudeに読ませて問題化します。<b>APIキーと利用料が必要</b>です（設定タブ）。URLが使えるならそちらが正確・無料です。</p>
     <input type="file" id="imgf" accept="image/*" multiple style="display:none">
@@ -607,7 +692,38 @@ function renderAdd(){
     fs.forEach(f=>QUEUE.unshift({id:uid(),file:f,state:'wait',msg:'待機中'}));
     drawQueue(); runQueue();
   });
-  drawQueue();
+  drawQueue(); drawSources();
+}
+function drawSources(){
+  const box=$('#srcs'); if(!box) return;
+  const l=getSources();
+  if(!l.length){ box.innerHTML='<p class="small muted">まだありません。</p>'; return; }
+  box.innerHTML=l.map((x,i)=>`<div class="queue-item">
+      <div class="small" style="word-break:break-all">${esc(x.url)}</div>
+      <div class="row" style="margin-top:6px">
+        <span class="small muted">${new Date(x.at).toLocaleDateString('ja-JP')}・${x.count||'?'}問</span>
+        <span class="grow"></span>
+        <button class="btn-ghost btn-sm" data-re="${i}">再取り込み</button>
+      </div></div>`).join('')
+    + `<button class="btn-ghost btn-block btn-sm" id="reall" style="margin-top:4px">すべて再取り込みして復元</button>`;
+  $$('[data-re]',box).forEach(b=>b.addEventListener('click',()=>restoreFrom([l[+b.dataset.re]])));
+  $('#reall').addEventListener('click',()=>restoreFrom(l));
+}
+async function restoreFrom(list){
+  const box=$('#imp'); let added=0, err=0;
+  for(let i=0;i<list.length;i++){
+    const x=list[i];
+    box.innerHTML=`<span class="spin"></span> 復元中… ${i+1}/${list.length}`;
+    try{
+      const rep=await fetchReport(reportUrlFrom(x.url),m=>{box.innerHTML=`<span class="spin"></span> ${esc(m)}（${i+1}/${list.length}）`;});
+      const probs=extractProblems(rep,x.url,x.reportId);
+      const ex=new Set((await dbAll()).map(r=>r.id));
+      for(const pr of probs) if(!ex.has(pr.id)){ await dbPut(applySavedStatus(pr)); added++; }
+    }catch(e){ err++; }
+  }
+  await flush();
+  box.innerHTML=`<div class="queue-item"><b>復元完了</b><br><span class="small">追加：${added}問${err?`／失敗：${err}件`:''}</span></div>`;
+  toast(added+'問を復元しました');
 }
 async function doImport(){
   const box=$('#imp'), input=$('#url').value;
@@ -629,7 +745,10 @@ async function ingest(rep,srcUrl,reportId,box){
   if(thr>0) probs=probs.filter(p=>p.q.severity==null||p.q.severity>=thr);
   const existing=new Set((await dbAll()).map(r=>r.id));
   const fresh=probs.filter(p=>!existing.has(p.id));
-  for(const p of fresh) await dbPut(p);
+  for(const p of fresh) await dbPut(applySavedStatus(p));
+  await flush();
+  askPersist();
+  if(srcUrl) addSource({url:srcUrl, reportId, at:Date.now(), count:probs.length});
   const rv=rep.review;
   box.innerHTML=`<div class="queue-item">
     <b>取り込み完了</b><br>
@@ -785,10 +904,29 @@ async function renderSettings(){
       <div><span class="n" style="color:var(--review)">${s.review}</span><span class="l">要復習</span></div>
       <div><span class="n" style="color:var(--good)">${s.correct}</span><span class="l">正解</span></div></div>
     <p class="small muted">問題はこの端末のブラウザ内に保存され、取り込むほど蓄積されます。同じURLを再取り込みしても重複しません。</p>
-    <div class="row"><button class="btn-ghost grow" id="exp">バックアップ書き出し</button>
+    <div class="row"><button class="btn-primary grow" id="exp">バックアップ書き出し</button>
       <button class="btn-ghost grow" id="imp">読み込み</button></div>
     <input type="file" id="impf" accept="application/json" style="display:none">
     <button class="btn-danger btn-block btn-sm" id="clr" style="margin-top:10px">すべて削除</button>
+  </div>
+  <div class="card">
+    <h2>保存の状態</h2>
+    <table class="diag">
+      <tr><td>IndexedDB</td><td>${esc(DIAG.idb)}</td></tr>
+      <tr><td>localStorage</td><td>${esc(DIAG.ls)}</td></tr>
+      <tr><td>永続ストレージ</td><td>${DIAG.persisted===true?'<span style="color:var(--good)">許可済み（消えにくい）</span>':DIAG.persisted===false?'<span style="color:var(--review)">未許可</span>':'不明'}</td></tr>
+      <tr><td>使用量</td><td>${DIAG.usage!=null?(DIAG.usage/1048576).toFixed(1)+' MB'+(DIAG.quota?' / '+(DIAG.quota/1048576).toFixed(0)+' MB':''):'不明'}</td></tr>
+      <tr><td>最終保存</td><td>${DIAG.lastSaveAt?new Date(DIAG.lastSaveAt).toLocaleString('ja-JP'):'―'}</td></tr>
+      ${DIAG.lastError?`<tr><td>エラー</td><td style="color:var(--bad)">${esc(DIAG.lastError)}</td></tr>`:''}
+    </table>
+    <button class="btn-ghost btn-block btn-sm" id="persist" style="margin-top:10px">永続ストレージを要求する</button>
+    <details><summary>データが消えてしまうときは</summary>
+      <p class="small muted">・iPhoneのSafariは、7日間そのサイトを開かないと保存データを自動削除することがあります。<b>共有ボタン →「ホーム画面に追加」</b>で追加したアイコンから開くと消えにくくなります。<br>
+      ・プライベートブラウズでは保存できません。<br>
+      ・履歴/サイトデータの消去でも消えます。<br>
+      ・消えても「取り込み」タブの<b>再取り込み</b>で問題は作り直せます。学習状況も残っていれば自動で戻ります。<br>
+      ・確実に残したい場合は上の<b>バックアップ書き出し</b>でファイル保存してください。</p>
+    </details>
   </div>
   <div class="card">
     <h2>取得プロキシ（上級者向け）</h2>
@@ -809,10 +947,13 @@ async function renderSettings(){
   <button class="btn-primary btn-block" id="save">設定を保存</button>
   <p class="small muted center" style="margin-top:10px">麻雀 何切るクイズ / データは端末内のみ</p>`;
   $('#model').value=CFG.model;
+  $('#persist').addEventListener('click',async()=>{ await askPersist();
+    toast(DIAG.persisted===true?'永続ストレージが許可されました':'この環境では許可されませんでした（ホーム画面に追加すると通りやすくなります）',4000);
+    renderSettings(); });
   $('#save').addEventListener('click',()=>{CFG.key=$('#key').value.trim();CFG.model=$('#model').value;CFG.proxy=$('#proxy').value.trim();toast('保存しました');});
   $('#exp').addEventListener('click',async()=>{
     const all=await dbAll();
-    const b=new Blob([JSON.stringify({v:2,exportedAt:Date.now(),items:all})],{type:'application/json'});
+    const b=new Blob([JSON.stringify({v:3,exportedAt:Date.now(),items:all,sources:getSources()})],{type:'application/json'});
     const a=document.createElement('a');a.href=URL.createObjectURL(b);
     a.download='mahjong-quiz-'+new Date().toISOString().slice(0,10)+'.json';
     document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);});
@@ -821,11 +962,20 @@ async function renderSettings(){
     const f=e.target.files[0];e.target.value='';if(!f)return;
     try{const j=JSON.parse(await f.text());const ex=new Set((await dbAll()).map(r=>r.id));let n=0;
       for(const it of (j.items||[])) if(!ex.has(it.id)){await dbPut(it);n++;}
+      (j.sources||[]).forEach(addSource); await flush();
       toast(n+'件読み込みました');renderSettings();}catch(err){toast('失敗：'+err.message);}});
   $('#clr').addEventListener('click',async()=>{if(!confirm('すべての問題を削除します。よろしいですか？'))return;
     await dbClear();QUIZ=null;toast('削除しました');renderSettings();});
 }
-render();
+async function boot(){
+  await loadAll();
+  render();
+  askPersist();
+  if(DIAG.restored>0) toast(DIAG.restored+'件のデータを復元しました');
+  else if(String(DIAG.idb).indexOf('使用不可')===0 && String(DIAG.ls).indexOf('OK')!==0)
+    toast('この環境ではデータを保存できません。プライベートブラウズを解除するか、ホーム画面に追加してください',7000);
+}
+boot();
 </script>
 </body>
 </html>

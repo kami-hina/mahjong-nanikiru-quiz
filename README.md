@@ -11,3 +11,14 @@ AIの推奨打牌と食い違った局面（error）だけを抜き出して「�
 任意機能として、牌譜スクリーンショットをClaude APIで読み取って問題化することもできます（自分のAPIキーが必要）。
 
 静的ファイルのみ。GitHub Pages で動作します。
+
+## データの保存
+
+問題と学習状況（正解／不正解／要復習）は端末内の **IndexedDB と localStorage の両方**に保存し、
+片方が消えても起動時にもう片方から自動復元します。取り込み元のURLも控えているので、
+両方消えても「取り込み」タブの再取り込みでワンタップで作り直せます（学習状況も復元）。
+
+## 牌の画像
+
+[FluffyStuff/riichi-mahjong-tiles](https://github.com/FluffyStuff/riichi-mahjong-tiles)（CC0 / パブリックドメイン）の Regular セット。
+Mortal の検討ビューアと同じ素材・同じ寸法・同じ色調整で描画しています。
