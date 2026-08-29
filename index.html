@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="何切る">
 <link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
 <title>麻雀 何切るクイズ</title>
 <style>
 :root{
@@ -188,10 +190,10 @@ function reportUrlFrom(input){
   throw new Error('レポートURL（?data=/report/xxxx.json）を貼り付けてください');
 }
 const PROXIES=[
-  u=>u,
   u=>'https://r.jina.ai/'+u,
   u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u),
-  u=>'https://api.codetabs.com/v1/proxy/?quest='+encodeURIComponent(u)
+  u=>'https://api.codetabs.com/v1/proxy/?quest='+encodeURIComponent(u),
+  u=>u
 ];
 function pickJSON(text){
   const i=text.indexOf('{'), j=text.lastIndexOf('}');
