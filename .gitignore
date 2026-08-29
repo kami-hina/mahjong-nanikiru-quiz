@@ -1,0 +1,4 @@
+*.PNG
+*.png
+sample-report.json
+.playwright-mcp/

@@ -1,0 +1,829 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b3a3e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="何切る">
+<link rel="manifest" href="manifest.json">
+<title>麻雀 何切るクイズ</title>
+<style>
+:root{
+  --bg:#0b2f33; --panel:#12474d; --line:#1e6a72; --fg:#eaf6f5; --muted:#9dc4c4;
+  --accent:#3ddc97; --accent2:#ffd166; --bad:#ff6b6b; --good:#3ddc97; --review:#ffa94d;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;font-size:15px;line-height:1.5}
+body{padding-bottom:calc(66px + var(--safe-b))}
+h1,h2{margin:0 0 8px;font-weight:700}h2{font-size:17px}
+a{color:var(--accent)}
+.wrap{padding:12px 12px 24px;max-width:760px;margin:0 auto}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.grow{flex:1}.center{text-align:center}.muted{color:var(--muted)}.small{font-size:12px}
+button{font:inherit;font-weight:700;border:none;border-radius:12px;padding:12px 14px;background:var(--line);color:var(--fg);cursor:pointer}
+button:active{opacity:.75}button[disabled]{opacity:.45}
+.btn-primary{background:var(--accent);color:#05221f}
+.btn-warn{background:var(--review);color:#3a1c00}
+.btn-ghost{background:transparent;border:1px solid var(--line);color:var(--fg)}
+.btn-danger{background:#7a2222;color:#ffdede}
+.btn-sm{padding:8px 10px;border-radius:10px;font-size:13px}
+.btn-block{display:block;width:100%}
+input,select,textarea{font:inherit;width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:#0a262a;color:var(--fg)}
+label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px}
+nav{position:fixed;left:0;right:0;bottom:0;z-index:50;display:flex;background:#08262a;border-top:1px solid var(--line);padding-bottom:var(--safe-b)}
+nav button{flex:1;background:none;border-radius:0;padding:10px 2px 8px;color:var(--muted);font-size:11px;font-weight:600}
+nav button .ico{display:block;font-size:19px;line-height:1.2}
+nav button.on{color:var(--accent)}
+.badge{display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700}
+.b-new{background:#1e6a72;color:#d8f5f2}.b-correct{background:#14603f;color:#c8ffe6}
+.b-wrong{background:#6d2020;color:#ffd7d7}.b-review{background:#7a4a12;color:#ffe3c0}
+.boardwrap{background:#0a2b2f;border:1px solid var(--line);border-radius:14px;padding:6px}
+svg.board{display:block;width:100%;height:auto}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center}
+.stats div{background:#0a262a;border:1px solid var(--line);border-radius:10px;padding:8px 2px}
+.stats .n{font-size:19px;font-weight:800;display:block}.stats .l{font-size:10px;color:var(--muted)}
+.filters{display:flex;gap:6px;overflow:auto;padding-bottom:4px;margin-bottom:10px}
+.filters button{white-space:nowrap;padding:7px 11px;font-size:13px;border-radius:999px;background:#0a262a;border:1px solid var(--line)}
+.filters button.on{background:var(--accent);color:#05221f;border-color:var(--accent)}
+.list-item{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin-bottom:8px;cursor:pointer}
+.tstatic{display:flex;gap:2px;flex-wrap:wrap}.tstatic .tw{width:22px}.tw{position:relative}
+.tile{display:block;width:100%;height:auto}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(80px + var(--safe-b));background:#08262a;
+  border:1px solid var(--line);padding:10px 14px;border-radius:12px;z-index:99;max-width:92%;font-size:13px;box-shadow:0 6px 24px rgba(0,0,0,.4)}
+.expl{background:#0a262a;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:14px;margin-top:10px;white-space:pre-wrap}
+details{background:#0a262a;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-top:10px}
+summary{cursor:pointer;font-size:13px;font-weight:700}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--muted);border-top-color:transparent;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.cand{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+.cand .bar{height:8px;border-radius:4px;background:var(--accent)}
+img.shot{width:100%;border-radius:10px;border:1px solid var(--line)}
+.queue-item{border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px;background:#0d383d}
+</style>
+</head>
+<body>
+<div id="view" class="wrap"></div>
+<nav>
+  <button data-tab="quiz" class="on"><span class="ico">🀄️</span>クイズ</button>
+  <button data-tab="add"><span class="ico">＋</span>取り込み</button>
+  <button data-tab="list"><span class="ico">📚</span>一覧</button>
+  <button data-tab="settings"><span class="ico">⚙️</span>設定</button>
+</nav>
+<script>
+"use strict";
+/* ========================= 小物 ========================= */
+const $=(s,r)=>(r||document).querySelector(s), $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+let toastT=null;
+function toast(m,ms){const o=$('.toast');if(o)o.remove();const d=document.createElement('div');d.className='toast';d.textContent=m;document.body.appendChild(d);clearTimeout(toastT);toastT=setTimeout(()=>d.remove(),ms||2800);}
+
+/* ========================= 牌 ========================= */
+// 内部表記: 1m..9m / 1p..9p / 1s..9s / 1z..7z(東南西北白發中) / 0m,0p,0s=赤5
+const HONOR=['','東','南','西','北','白','發','中'], KANJI=['','一','二','三','四','五','六','七','八','九'];
+const MJ2={E:'1z',S:'2z',W:'3z',N:'4z',P:'5z',F:'6z',C:'7z'};
+const CH2Z={'東':'1z','南':'2z','西':'3z','北':'4z','白':'5z','發':'6z','発':'6z','中':'7z'};
+function cvMjai(p){ if(!p) return null; if(MJ2[p]) return MJ2[p];
+  if(/^5[mps]r$/.test(p)) return '0'+p[1]; if(/^[0-9][mps]$/.test(p)) return p; return null; }
+function normTile(t){ if(t==null) return null; let s=String(t).trim(); if(!s) return null;
+  if(CH2Z[s]) return CH2Z[s]; if(MJ2[s]) return MJ2[s];
+  s=s.replace(/\s/g,'').toLowerCase().replace(/^赤/,'r').replace(/^red/,'r');
+  let m=s.match(/^r?([0-9])([mpsz])r?$/); if(!m){const m2=s.match(/^([mpsz])([0-9])$/); if(m2) m=[s,m2[2],m2[1]];}
+  if(!m) return null; let n=parseInt(m[1],10), su=m[2];
+  if(su==='z') return (n>=1&&n<=7)? n+'z':null;
+  if(n===0||(/r/.test(s)&&n===5)) return '0'+su;
+  return (n>=1&&n<=9)? n+su:null; }
+function normList(a){ return Array.isArray(a)? a.map(normTile).filter(Boolean):[]; }
+const SO={m:0,p:1,s:2,z:3};
+const tkey=t=>SO[t[1]]*100+(t[0]==='0'?5:parseInt(t[0],10))*10+(t[0]==='0'?1:0);
+const sortTiles=a=>a.slice().sort((x,y)=>tkey(x)-tkey(y));
+function tileName(t){ if(!t) return '―'; const s=t[1],n=t[0];
+  if(s==='z') return HONOR[+n];
+  const j={m:'萬',p:'筒',s:'索'}[s]; return n==='0'? '赤5'+j : n+j; }
+const loose=t=>t? (t[0]==='0'? '5'+t[1]:t):t;
+
+/* ---- 牌のSVG ---- */
+function bgRect(red){return `<rect x="1.2" y="1.2" width="57.6" height="81.6" rx="7" fill="${red?'#fff2f2':'#fbf8ef'}" stroke="#b9ad92" stroke-width="1.6"/><rect x="3.4" y="3.4" width="53.2" height="77.2" rx="5" fill="none" stroke="#fff" stroke-width="1" opacity=".8"/>`;}
+function tx(x,y,sz,f,s){return `<text x="${x}" y="${y}" text-anchor="middle" font-size="${sz}" fill="${f}" font-weight="700" font-family="'Hiragino Mincho ProN','Yu Mincho',serif">${s}</text>`;}
+function dot(cx,cy,r,ring,core){return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#fff" stroke="${ring}" stroke-width="${Math.max(1.5,r*.36)}"/><circle cx="${cx}" cy="${cy}" r="${r*.34}" fill="${core}"/>`;}
+function stick(cx,cy,h,c){const w=8.6;return `<rect x="${cx-w/2}" y="${cy-h/2}" width="${w}" height="${h}" rx="${w/2}" fill="${c}"/><rect x="${cx-1.6}" y="${cy-h/2+3}" width="3.2" height="${h-6}" rx="1.6" fill="#fff" opacity=".45"/>`;}
+const PL={1:[[30,42,15]],2:[[30,25,9],[30,59,9]],3:[[15,22,8],[30,42,8],[45,62,8]],
+4:[[18,25,9],[42,25,9],[18,59,9],[42,59,9]],5:[[18,25,9],[42,25,9],[30,42,9],[18,59,9],[42,59,9]],
+6:[[18,22,8],[42,22,8],[18,42,8],[42,42,8],[18,62,8],[42,62,8]],
+7:[[14,19,7],[30,19,7],[46,19,7],[18,43,8],[42,43,8],[18,64,8],[42,64,8]],
+8:[[18,17,7.4],[42,17,7.4],[18,35,7.4],[42,35,7.4],[18,53,7.4],[42,53,7.4],[18,71,7.4],[42,71,7.4]],
+9:[[15,21,7.4],[30,21,7.4],[45,21,7.4],[15,42,7.4],[30,42,7.4],[45,42,7.4],[15,63,7.4],[30,63,7.4],[45,63,7.4]]};
+const SL={2:[[30,25,30],[30,59,30]],3:[[30,20,26],[20,57,26],[40,57,26]],
+4:[[19,25,28],[41,25,28],[19,59,28],[41,59,28]],5:[[19,24,26],[41,24,26],[30,42,26],[19,60,26],[41,60,26]],
+6:[[14,25,28],[30,25,28],[46,25,28],[14,59,28],[30,59,28],[46,59,28]],
+7:[[30,17,22],[14,45,22],[30,45,22],[46,45,22],[14,70,22],[30,70,22],[46,70,22]],
+8:[[14,25,28],[26,25,28],[38,25,28],[50,25,28],[14,59,28],[26,59,28],[38,59,28],[50,59,28]],
+9:[[15,20,20],[30,20,20],[45,20,20],[15,42,20],[30,42,20],[45,42,20],[15,64,20],[30,64,20],[45,64,20]]};
+const faceCache={};
+function face(code){
+  if(faceCache[code]) return faceCache[code];
+  const red=code[0]==='0', n=red?5:parseInt(code[0],10), su=code[1];
+  let inner='';
+  if(su==='m'){ inner=tx(30,44,36,red?'#c62828':'#1a1a1a',KANJI[n])+tx(30,74,22,'#b3261e','萬'); }
+  else if(su==='p'){
+    if(n===1) inner=`<circle cx="30" cy="42" r="16" fill="#fff" stroke="#1f6fb2" stroke-width="3.4"/><circle cx="30" cy="42" r="10" fill="#fff" stroke="#c0392b" stroke-width="3"/><circle cx="30" cy="42" r="4" fill="#1f6fb2"/>`;
+    else inner=PL[n].map(([x,y,r],i)=>{const mid=red&&n===5&&i===2;return dot(x,y,r,mid?'#c62828':'#1f6fb2',mid?'#c62828':'#c0392b');}).join('');
+  } else if(su==='s'){
+    if(n===1) inner=`<ellipse cx="30" cy="52" rx="13" ry="17" fill="#177a3d"/><circle cx="30" cy="27" r="9" fill="#177a3d"/><circle cx="33" cy="25" r="2" fill="#fff"/><path d="M39 28 L48 31 L39 34 Z" fill="#c0392b"/><path d="M30 68 L23 80 L37 80 Z" fill="#c0392b"/>`;
+    else inner=SL[n].map(([x,y,h],i)=>stick(x,y,h,((red&&n===5&&i===2)||(n===5&&i===2)||(n===7&&i===0))?'#c0392b':'#177a3d')).join('');
+  } else {
+    if(n===5) inner=`<rect x="13" y="15" width="34" height="54" rx="3" fill="none" stroke="#2b6ea8" stroke-width="3"/>`;
+    else inner=tx(30,58,42,n===6?'#177a3d':(n===7?'#c0392b':'#222'),HONOR[n]);
+  }
+  return faceCache[code]=bgRect(red)+inner;
+}
+function tileSVG(code){return `<svg class="tile" viewBox="0 0 60 84">${face(code)}</svg>`;}
+function tilesHTML(list,st){return `<div class="tstatic" ${st?'style="'+st+'"':''}>`+list.map(t=>`<div class="tw">${tileSVG(t)}</div>`).join('')+`</div>`;}
+// 卓図用: 任意位置・サイズ・回転で牌を置く
+function put(t,x,y,w,rot,extra){
+  const h=w*84/60;
+  const g=`<g transform="translate(${x},${y})${rot?` rotate(${rot} ${w/2} ${h/2})`:''}"><g transform="scale(${w/60})">${face(t)}</g>${extra||''}</g>`;
+  return g;
+}
+function putBack(x,y,w,rot){
+  const h=w*84/60;
+  return `<g transform="translate(${x},${y})${rot?` rotate(${rot} ${w/2} ${h/2})`:''}"><g transform="scale(${w/60})"><rect x="1.2" y="1.2" width="57.6" height="81.6" rx="7" fill="#8e2b2b" stroke="#6d1f1f" stroke-width="1.6"/><rect x="9" y="9" width="42" height="66" rx="4" fill="none" stroke="#a94b4b" stroke-width="2"/></g></g>`;
+}
+
+/* ========================= 保存 ========================= */
+const DB='mahjong-quiz', STORE='problems'; let _db=null;
+function db(){ if(_db) return Promise.resolve(_db);
+  return new Promise((res,rej)=>{ const r=indexedDB.open(DB,1);
+    r.onupgradeneeded=e=>{const d=e.target.result; if(!d.objectStoreNames.contains(STORE)){const os=d.createObjectStore(STORE,{keyPath:'id'});os.createIndex('createdAt','createdAt');}};
+    r.onsuccess=()=>{_db=r.result;res(_db);}; r.onerror=()=>rej(r.error); }); }
+const os=m=>db().then(d=>d.transaction(STORE,m).objectStore(STORE));
+const req=p=>new Promise((res,rej)=>{p.onsuccess=()=>res(p.result);p.onerror=()=>rej(p.error);});
+const dbAll=()=>os('readonly').then(o=>req(o.getAll())).then(a=>a||[]);
+const dbGet=id=>os('readonly').then(o=>req(o.get(id)));
+const dbPut=r=>os('readwrite').then(o=>req(o.put(r))).then(()=>r);
+const dbDel=id=>os('readwrite').then(o=>req(o.delete(id)));
+const dbClear=()=>os('readwrite').then(o=>req(o.clear()));
+
+const CFG={
+  get key(){return localStorage.getItem('mq.apikey')||''}, set key(v){localStorage.setItem('mq.apikey',v)},
+  get model(){return localStorage.getItem('mq.model')||'claude-opus-5'}, set model(v){localStorage.setItem('mq.model',v)},
+  get proxy(){return localStorage.getItem('mq.proxy')||''}, set proxy(v){localStorage.setItem('mq.proxy',v)},
+  get lastUrl(){return localStorage.getItem('mq.lasturl')||''}, set lastUrl(v){localStorage.setItem('mq.lasturl',v)}
+};
+
+/* ========================= Mortal レポート取り込み ========================= */
+function reportUrlFrom(input){
+  let s=(input||'').trim();
+  if(!s) throw new Error('URLを入力してください');
+  if(/^\//.test(s)) return 'https://mjai.ekyu.moe'+s;
+  let u; try{ u=new URL(s); }catch(e){ throw new Error('URLの形式が正しくありません'); }
+  const d=u.searchParams.get('data');
+  if(d) return new URL(d,u.origin).href;
+  if(/\.json($|\?)/i.test(u.pathname)) return u.href;
+  throw new Error('レポートURL（?data=/report/xxxx.json）を貼り付けてください');
+}
+const PROXIES=[
+  u=>u,
+  u=>'https://r.jina.ai/'+u,
+  u=>'https://api.allorigins.win/raw?url='+encodeURIComponent(u),
+  u=>'https://api.codetabs.com/v1/proxy/?quest='+encodeURIComponent(u)
+];
+function pickJSON(text){
+  const i=text.indexOf('{'), j=text.lastIndexOf('}');
+  if(i<0||j<0) throw new Error('JSONではありません');
+  return JSON.parse(text.slice(i,j+1));
+}
+async function fetchReport(url,onStep){
+  const list=[]; if(CFG.proxy) list.push(u=>CFG.proxy.replace('{url}',encodeURIComponent(u)).replace('{raw}',u));
+  list.push(...PROXIES);
+  let lastErr=null;
+  for(let i=0;i<list.length;i++){
+    const target=list[i](url);
+    onStep&&onStep(`取得中…（経路 ${i+1}/${list.length}）`);
+    try{
+      const r=await fetch(target,{headers:{'accept':'application/json,text/plain,*/*'}});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const t=await r.text();
+      const j=pickJSON(t);
+      if(!j.review||!Array.isArray(j.review.kyokus)) throw new Error('Mortalのレポートではありません');
+      return j;
+    }catch(e){ lastErr=e; }
+  }
+  throw new Error('レポートを取得できませんでした（'+(lastErr&&lastErr.message)+'）。設定タブで自前のCORSプロキシを指定するか、JSONファイルを直接読み込んでください。');
+}
+
+/* mjaiログを再生して各打牌局面の完全な状態を復元 */
+function replay(rep){
+  const PID=rep.player_id|0, log=rep.mjai_log||[];
+  const names=(log[0]&&log[0].names)||['自分','下家','対面','上家'];
+  const out=[]; let st=null, ki=-1;
+  const rel=a=>((a-PID)%4+4)%4;
+  for(const ev of log){
+    if(ev.type==='start_kyoku'){
+      ki++;
+      st={ki,bakaze:ev.bakaze,kyoku:ev.kyoku,honba:ev.honba,oya:ev.oya,
+          scores:ev.scores.slice(),dora:[ev.dora_marker],rivers:[[],[],[],[]],riichi:[0,0,0,0],
+          fuuros:[[],[],[],[]],hand:(ev.tehais[PID]||[]).slice(),drawn:null,pending:-1,left:70};
+      continue;
+    }
+    if(!st) continue;
+    if(ev.type==='dora'){ st.dora.push(ev.dora_marker); continue; }
+    if(ev.type==='tsumo'){ st.left=Math.max(0,st.left-1); if(ev.actor===PID){st.hand.push(ev.pai);st.drawn=ev.pai;} continue; }
+    if(ev.type==='reach'){ st.pending=ev.actor; continue; }
+    if(ev.type==='reach_accepted'){ st.riichi[rel(ev.actor)]=1; continue; }
+    if(ev.type==='dahai'){
+      if(ev.actor===PID){
+        out.push({ki, snap:{
+          bakaze:st.bakaze,kyoku:st.kyoku,honba:st.honba,oyaRel:rel(st.oya),
+          dora:st.dora.map(cvMjai).filter(Boolean),
+          scores:[0,1,2,3].map(r=>st.scores[(PID+r)%4]),
+          rivers:st.rivers.map(x=>x.map(o=>({pai:cvMjai(o.pai),t:o.tsumogiri?1:0,r:o.riichi?1:0}))),
+          riichi:st.riichi.slice(),
+          fuuros:st.fuuros.map(f=>f.map(m=>({type:m.type,tiles:(m.consumed||[]).concat(m.pai?[m.pai]:[]).map(cvMjai).filter(Boolean)}))),
+          handRaw:st.hand.slice(), drawn:st.drawn, left:st.left, names:[0,1,2,3].map(r=>names[(PID+r)%4])
+        }});
+        const k=st.hand.indexOf(ev.pai); if(k>=0) st.hand.splice(k,1); st.drawn=null;
+      }
+      st.rivers[rel(ev.actor)].push({pai:ev.pai,tsumogiri:ev.tsumogiri,riichi:st.pending===ev.actor});
+      if(st.pending===ev.actor) st.pending=-1;
+      continue;
+    }
+    if(['chi','pon','daiminkan','kakan','ankan'].indexOf(ev.type)>=0){
+      const cons=ev.consumed||[];
+      if(ev.actor===PID){
+        cons.forEach(c=>{const k=st.hand.indexOf(c); if(k>=0) st.hand.splice(k,1);});
+        if((ev.type==='kakan'||ev.type==='ankan')&&ev.pai){const k=st.hand.indexOf(ev.pai); if(k>=0) st.hand.splice(k,1);}
+        st.drawn=null;
+      }
+      if(ev.type!=='ankan'&&ev.type!=='kakan'&&ev.target!=null){ const rr=rel(ev.target); if(st.rivers[rr].length) st.rivers[rr].pop(); }
+      st.fuuros[rel(ev.actor)].push({type:ev.type,pai:ev.pai,consumed:cons});
+      continue;
+    }
+  }
+  return out;
+}
+const msKey=a=>a.slice().sort().join(',');
+function extractProblems(rep,srcUrl,reportId){
+  const snaps=replay(rep);
+  const byK={}; snaps.forEach(s=>{(byK[s.ki]=byK[s.ki]||[]).push(s.snap);});
+  const probs=[]; const impAt=Date.now();
+  rep.review.kyokus.forEach((k,ki)=>{
+    const list=byK[ki]||[]; let ptr=0;
+    k.entries.forEach((e,ei)=>{
+      if(!e.actual||(e.actual.type!=='dahai'&&e.actual.type!=='reach')) return;
+      // 手牌の一致でスナップショットを同定
+      const want=msKey((e.state&&e.state.tehai||[]).map(cvMjai).filter(Boolean));
+      let found=-1;
+      for(let i=ptr;i<Math.min(list.length,ptr+6);i++){
+        if(msKey(list[i].handRaw.map(cvMjai).filter(Boolean))===want){found=i;break;}
+      }
+      if(found<0) return;
+      ptr=found+1;
+      if(e.is_equal) return;
+      if(!e.expected||e.expected.type!=='dahai') return;
+      const snap=list[found];
+      const cands=(e.details||[]).filter(d=>d.action&&d.action.type==='dahai'&&cvMjai(d.action.pai))
+        .map(d=>({tile:cvMjai(d.action.pai),prob:d.prob,q:d.q_value})).slice(0,14);
+      const answer=cvMjai(e.expected.pai);
+      const actual=cvMjai(e.actual.pai);
+      const drawn=cvMjai(snap.drawn);
+      let hand=snap.handRaw.map(cvMjai).filter(Boolean);
+      if(drawn){ const i=hand.indexOf(drawn); if(i>=0) hand.splice(i,1); }
+      hand=sortTiles(hand);
+      const topP=cands.length?cands[0].prob:null;
+      const actP=(cands.find(c=>c.tile===actual)||{}).prob;
+      probs.push({
+        id:reportId+'-'+ki+'-'+ei, createdAt:impAt, seq:probs.length, src:'mortal', srcUrl, reportId,
+        st:{roundText:(snap.bakaze==='E'?'東':snap.bakaze==='S'?'南':'西')+snap.kyoku+'局', oyaRel:snap.oyaRel,
+            honba:snap.honba, seatText:['東家','南家','西家','北家'][(4-snap.oyaRel)%4],
+            junme:e.junme, left:(e.tiles_left!=null?e.tiles_left:snap.left), dora:snap.dora, scores:snap.scores, riichi:snap.riichi,
+            rivers:snap.rivers, fuuros:snap.fuuros, hand, drawn, names:snap.names},
+        q:{answer, actual, candidates:cands, shanten:(e.shanten==null?null:e.shanten),
+           furiten:!!e.at_furiten, actualType:e.actual.type, expectedType:e.expected.type,
+           severity:(topP!=null&&actP!=null)? (topP-actP):null, explanation:''},
+        status:'new', review:false, attempts:0, correctCount:0, wrongCount:0, lastAnsweredAt:null
+      });
+    });
+  });
+  return probs;
+}
+
+/* ========================= 卓図（マスク／答え表示） ========================= */
+const W=720;
+function riverBlock(list,cx,cy,rot,tw){
+  const cols=6, gap=2, th=tw*84/60;
+  const rows=Math.max(1,Math.ceil(list.length/cols));
+  const bw=cols*(tw+gap)-gap, bh=rows*(th+gap)-gap;
+  let s=`<g transform="translate(${cx},${cy}) rotate(${rot}) translate(${-bw/2},${-bh/2})">`;
+  list.forEach((o,i)=>{
+    const c=i%cols, r=Math.floor(i/cols);
+    const x=c*(tw+gap), y=r*(th+gap);
+    s+=put(o.pai,x,y,tw,o.r?90:0);
+  });
+  return s+'</g>';
+}
+function meldGroup(f,x,y,tw){
+  let s='', cx=x;
+  f.forEach(m=>{ m.tiles.forEach(t=>{ s+=put(t,cx,y,tw,0); cx+=tw+1; }); cx+=5; });
+  return s;
+}
+function boardSVG(rec,reveal){
+  const st=rec.st, q=rec.q;
+  const hand=st.hand||[], drawn=st.drawn;
+  const all=drawn? hand.concat([drawn]):hand.slice();
+  const H=770;
+  const myWind=(4-((st.oyaRel!=null)?st.oyaRel:0))%4;
+  const wd=['東','南','西','北'];
+  let s=`<svg class="board" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  s+=`<rect width="${W}" height="${H}" rx="14" fill="#0d4247"/>`;
+  // ドラ表示
+  if(st.dora&&st.dora.length){
+    s+=`<text x="58" y="38" font-size="17" fill="#9dc4c4" font-family="sans-serif">ドラ表示</text>`;
+    st.dora.slice(0,5).forEach((t,i)=> s+=put(t,132+i*36,6,32,0));
+  }
+  s+=`<text x="662" y="38" text-anchor="end" font-size="16" fill="#9dc4c4" font-family="sans-serif">残り${st.left!=null?st.left+'枚':'―'}</text>`;
+  // 卓
+  s+=`<rect x="56" y="60" width="608" height="480" rx="10" fill="#0a3438" stroke="#17555c"/>`;
+  // 中央
+  s+=`<rect x="272" y="255" width="176" height="100" rx="8" fill="#0f4a50" stroke="#2b7d85"/>`;
+  s+=`<text x="360" y="296" text-anchor="middle" font-size="27" font-weight="700" fill="#eaf6f5" font-family="sans-serif">${esc(st.roundText||'')}</text>`;
+  s+=`<text x="360" y="320" text-anchor="middle" font-size="15" fill="#9dc4c4" font-family="sans-serif">${st.honba?st.honba+'本場 ':''}${st.junme?st.junme+'巡目':''}</text>`;
+  const sc=st.scores||[0,0,0,0];
+  const sp=[[360,378],[478,312],[360,240],[242,312]];
+  sp.forEach((p,i)=>{
+    if(!sc[i]&&i) return;
+    s+=`<text x="${p[0]}" y="${p[1]}" text-anchor="middle" font-size="15" fill="${i?'#9dc4c4':'#ffd166'}" font-family="sans-serif">${wd[(myWind+i)%4]} ${sc[i]||''}</text>`;
+  });
+  // リーチ棒
+  (st.riichi||[]).forEach((r,i)=>{ if(!r) return;
+    const pos=[[336,388,0],[462,290,90],[336,222,0],[258,290,90]][i];
+    s+=`<g transform="translate(${pos[0]},${pos[1]}) rotate(${pos[2]})"><rect width="48" height="7" rx="3.5" fill="#f2f2f2"/><circle cx="24" cy="3.5" r="2.6" fill="#e03131"/></g>`;
+  });
+  // 河
+  const riv=st.rivers||[[],[],[],[]];
+  s+=riverBlock(riv[2].slice(0,24),360,155,180,30);
+  s+=riverBlock(riv[0].slice(0,24),360,448,0,30);
+  s+=riverBlock(riv[3].slice(0,24),150,305,90,30);
+  s+=riverBlock(riv[1].slice(0,24),570,305,270,30);
+  // 副露（他家）
+  const fu=st.fuuros||[[],[],[],[]];
+  if(fu[2]&&fu[2].length) s+=meldGroup(fu[2],440,66,26);
+  if(fu[3]&&fu[3].length) s+=meldGroup(fu[3],62,466,26);
+  if(fu[1]&&fu[1].length) s+=meldGroup(fu[1],470,466,26);
+  // 自分の手牌
+  const tw=46, th=tw*84/60, hy=640, gap=2, n=all.length;
+  const totalW=n*(tw+gap)-gap+(drawn?14:0);
+  let x0=(W-totalW)/2; const xs=[];
+  for(let i=0;i<n;i++){ xs.push(x0); x0+=tw+gap+((drawn&&i===n-2)?14:0); }
+  // 推奨バー（答え表示時のみ）
+  if(reveal&&q.candidates&&q.candidates.length){
+    const maxP=Math.max.apply(null,q.candidates.map(c=>c.prob||0))||1;
+    const used={};
+    all.forEach((t,i)=>{
+      const c=q.candidates.find(c=>c.tile===t&&!used[c.tile]);
+      if(!c||!(c.prob>0.0005)) return; used[c.tile]=1;
+      const hgt=Math.max(4,(c.prob/maxP)*78), top=hy-10-hgt, isTop=(t===q.answer);
+      s+=`<rect x="${xs[i]+tw/2-9}" y="${top}" width="18" height="${hgt}" rx="3" fill="${isTop?'#4ade80':'#2f8f63'}"/>`;
+      if(c.prob>=0.02) s+=`<text x="${xs[i]+tw/2}" y="${top-6}" text-anchor="middle" font-size="15" fill="#cfeee0" font-family="sans-serif">${Math.round(c.prob*100)}%</text>`;
+    });
+  }
+  let ansDone=0, actDone=0;
+  all.forEach((t,i)=>{
+    let extra='';
+    if(reveal){
+      if(t===q.answer&&!ansDone){ ansDone=1; extra=`<rect x="-3" y="-3" width="${tw+6}" height="${th+6}" rx="8" fill="none" stroke="#3ddc97" stroke-width="4"/>`; }
+      else if(t===q.actual&&t!==q.answer&&!actDone){ actDone=1; extra=`<rect x="-3" y="-3" width="${tw+6}" height="${th+6}" rx="8" fill="none" stroke="#ff6b6b" stroke-width="4"/>`; }
+    }
+    s+=put(t,xs[i],hy,tw,0,extra);
+  });
+  s+=`<text x="24" y="${hy-14}" font-size="17" fill="#9dc4c4" font-family="sans-serif">自分（${wd[myWind]}家）${drawn?'　└ ツモ':''}</text>`;
+  // 自分の副露
+  if(fu[0]&&fu[0].length) s+=meldGroup(fu[0],430,712,26);
+  if(reveal){
+    s+=`<text x="24" y="${hy+th+34}" font-size="20" font-weight="700" fill="#3ddc97" font-family="sans-serif">推奨 ${esc(tileName(q.answer))}</text>`;
+    s+=`<text x="190" y="${hy+th+34}" font-size="20" fill="#ff9b9b" font-family="sans-serif">実戦 ${esc(tileName(q.actual))}${q.actualType==='reach'?'（リーチ）':''}</text>`;
+  } else {
+    s+=`<text x="24" y="${hy+th+34}" font-size="20" font-weight="700" fill="#ffd166" font-family="sans-serif">何を切る？</text>`;
+  }
+  return s+'</svg>';
+}
+
+/* ========================= 画面 ========================= */
+let TAB='quiz'; const view=$('#view');
+$$('nav button').forEach(b=>b.addEventListener('click',()=>{TAB=b.dataset.tab;$$('nav button').forEach(x=>x.classList.toggle('on',x===b));render();}));
+function render(){ window.scrollTo(0,0);
+  if(TAB==='quiz') renderQuiz(); else if(TAB==='add') renderAdd(); else if(TAB==='list') renderList(); else renderSettings(); }
+async function stats(){ const a=await dbAll(); const s={total:a.length,new:0,wrong:0,correct:0,review:0};
+  a.forEach(r=>{ if(r.review)s.review++; if(r.status==='wrong')s.wrong++; else if(r.status==='correct')s.correct++; else s.new++; }); return s; }
+
+/* ---------- クイズ ---------- */
+let QUIZ=null; // {rec, reveal}
+async function pickNext(prevId){
+  const all=await dbAll(); if(!all.length) return null;
+  const pools=[ all.filter(r=>r.status==='wrong'),
+                all.filter(r=>r.review&&r.status!=='wrong'),
+                all.filter(r=>r.status!=='correct'&&r.status!=='wrong'&&!r.review) ];
+  for(const p of pools){
+    const c=p.filter(r=>r.id!==prevId);
+    if(c.length){ c.sort((a,b)=>(a.lastAnsweredAt||0)-(b.lastAnsweredAt||0));
+      const head=c.slice(0,Math.max(1,Math.ceil(c.length*0.4)));
+      return head[Math.floor(Math.random()*head.length)]; }
+  }
+  let c=all.filter(r=>r.id!==prevId); if(!c.length) c=all;
+  return c[Math.floor(Math.random()*c.length)];
+}
+function poolLabel(r){
+  if(r.status==='wrong') return '<span class="badge b-wrong">不正解リストから</span>';
+  if(r.review) return '<span class="badge b-review">要復習リストから</span>';
+  if(r.status==='correct') return '<span class="badge b-correct">復習（正解済み）</span>';
+  return '<span class="badge b-new">未出題から</span>';
+}
+async function renderQuiz(){
+  if(QUIZ) return drawQuiz();
+  const s=await stats();
+  view.innerHTML=`<div class="card">
+    <h2>何切るクイズ</h2>
+    <p class="small muted">不正解 → 要復習 → 未出題 の順に出題します。答えはマスクされています。</p>
+    <div class="stats" style="margin:10px 0">
+      <div><span class="n" style="color:var(--bad)">${s.wrong}</span><span class="l">不正解</span></div>
+      <div><span class="n" style="color:var(--review)">${s.review}</span><span class="l">要復習</span></div>
+      <div><span class="n">${s.new}</span><span class="l">未出題</span></div>
+      <div><span class="n" style="color:var(--good)">${s.correct}</span><span class="l">正解</span></div>
+    </div>
+    <button class="btn-primary btn-block" id="start" ${s.total?'':'disabled'}>クイズを開始</button>
+    ${s.total?'':'<p class="small muted center" style="margin-top:10px">「取り込み」タブでMortalの検討URLを登録してください。</p>'}
+  </div>`;
+  const b=$('#start'); if(b) b.addEventListener('click',async()=>{
+    b.disabled=true;b.textContent='出題中…';
+    const rec=await pickNext(null);
+    if(!rec){toast('問題がありません');b.disabled=false;b.textContent='クイズを開始';return;}
+    QUIZ={rec,reveal:false}; drawQuiz();
+  });
+}
+function candListHTML(q){
+  const cs=(q.candidates||[]).filter(c=>c.prob>=0.005).slice(0,6);
+  if(!cs.length) return '';
+  const max=cs[0].prob||1;
+  return `<div style="margin-top:10px"><div class="small muted" style="margin-bottom:4px">Mortalの評価</div>`+
+    cs.map(c=>`<div class="cand"><div class="tw" style="width:26px">${tileSVG(c.tile)}</div>
+      <div style="width:64px">${esc(tileName(c.tile))}</div>
+      <div class="grow"><div class="bar" style="width:${Math.max(3,(c.prob/max)*100)}%;${c.tile===q.answer?'':'opacity:.5'}"></div></div>
+      <div class="small muted" style="width:52px;text-align:right">${(c.prob*100).toFixed(1)}%</div></div>`).join('')+`</div>`;
+}
+function drawQuiz(){
+  const {rec,reveal}=QUIZ, q=rec.q, st=rec.st;
+  view.innerHTML=`
+    <div class="row" style="margin-bottom:8px">${poolLabel(rec)}<span class="grow"></span>
+      <span class="small muted">◯${rec.correctCount||0} / ✕${rec.wrongCount||0}</span></div>
+    <div class="boardwrap">${boardSVG(rec,reveal)}</div>
+    <div id="ans"></div>
+    <div id="act" style="margin-top:12px"></div>
+    <div id="det"></div>`;
+  const act=$('#act'), ans=$('#ans'), det=$('#det');
+  if(!reveal){
+    act.innerHTML=`<button class="btn-primary btn-block" id="show">答えを見る</button>
+      <div class="row" style="margin-top:8px">
+        <button class="btn-ghost grow btn-sm" id="skip">スキップ</button>
+        <button class="btn-ghost btn-sm" id="quit">終了</button></div>`;
+    $('#show').addEventListener('click',()=>{QUIZ.reveal=true;drawQuiz();});
+  } else {
+    const sev=q.severity!=null? `（推奨との確率差 ${Math.round(q.severity*100)}pt）`:'';
+    ans.innerHTML=`<div class="expl">
+        <b>Mortalの推奨：${esc(tileName(q.answer))}</b>${q.candidates&&q.candidates[0]?`（${(q.candidates[0].prob*100).toFixed(1)}%）`:''}<br>
+        実戦の打牌：${esc(tileName(q.actual))}${q.actualType==='reach'?'（リーチ宣言）':''}${sev}
+        ${q.shanten!=null?`<br>この時点：${q.shanten===0?'テンパイ':q.shanten+'向聴'}${q.furiten?' / フリテン':''}`:''}
+      </div>
+      `;
+    det.innerHTML=`${candListHTML(q)}
+      ${q.explanation?`<div class="expl">${esc(q.explanation)}</div>`:''}
+      ${CFG.key?`<button class="btn-ghost btn-block btn-sm" id="ai" style="margin-top:10px">AIに理由を解説してもらう（APIを使用）</button>`:''}
+      ${rec.srcUrl?`<p class="small muted" style="margin-top:8px"><a href="${esc(rec.srcUrl)}" target="_blank" rel="noopener">元の検討ページを開く</a></p>`:''}`;
+    act.innerHTML=`<div class="small muted center" style="margin-bottom:6px">自己採点（リストに振り分けます）</div>
+      <div class="row">
+        <button class="btn-primary grow" id="ok">◯ 正解だった</button>
+        <button class="btn-danger grow" id="ng">✕ 間違えた</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="${rec.review?'btn-warn':'btn-ghost'} grow" id="rev">${rec.review?'★ 要復習リスト登録済み':'☆ 要復習に入れる'}</button>
+        <button class="btn-ghost" id="quit">終了</button>
+      </div>
+      <button class="btn-ghost btn-block" id="next" style="margin-top:8px">次の問題へ（採点しない）</button>`;
+    $('#ok').addEventListener('click',()=>mark(true));
+    $('#ng').addEventListener('click',()=>mark(false));
+    $('#rev').addEventListener('click',async()=>{ rec.review=!rec.review; await dbPut(rec);
+      toast(rec.review?'要復習リストに追加':'要復習リストから削除'); drawQuiz(); });
+    const ai=$('#ai'); if(ai) ai.addEventListener('click',()=>explainWithAI(rec,ai));
+  }
+  const nx=$('#next'), sk=$('#skip'), qt=$('#quit');
+  if(nx) nx.addEventListener('click',next);
+  if(sk) sk.addEventListener('click',next);
+  if(qt) qt.addEventListener('click',()=>{QUIZ=null;render();});
+}
+async function next(){
+  const prev=QUIZ&&QUIZ.rec.id;
+  const rec=await pickNext(prev);
+  if(!rec){toast('問題がありません');QUIZ=null;render();return;}
+  QUIZ={rec,reveal:false}; drawQuiz();
+}
+async function mark(ok){
+  const rec=QUIZ.rec;
+  rec.attempts=(rec.attempts||0)+1;
+  if(ok) rec.correctCount=(rec.correctCount||0)+1; else rec.wrongCount=(rec.wrongCount||0)+1;
+  rec.status=ok?'correct':'wrong';
+  rec.lastAnsweredAt=Date.now();
+  await dbPut(rec);
+  toast(ok?'正解リストに入れました':'不正解リストに入れました',1400);
+  next();
+}
+
+/* ---------- 任意：AI解説（テキストのみ・最小トークン） ---------- */
+async function explainWithAI(rec,btn){
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> 生成中…';
+  try{
+    const st=rec.st,q=rec.q;
+    const p=`麻雀の何切る問題です。簡潔に日本語で3〜4文、理由だけ答えてください。
+${st.roundText} ${st.junme||'?'}巡目 自風${st.seatText} ドラ表示${(st.dora||[]).map(tileName).join('・')}
+手牌: ${st.hand.map(tileName).join(' ')} ツモ: ${tileName(st.drawn)}
+副露: ${(st.fuuros[0]||[]).map(m=>m.tiles.map(tileName).join('')).join(' / ')||'なし'}
+${q.shanten!=null?`向聴数: ${q.shanten}`:''}
+麻雀AI Mortalの推奨打牌: ${tileName(q.answer)}
+実戦の打牌: ${tileName(q.actual)}
+なぜ「${tileName(q.answer)}」が最善か、実戦打牌と比べて説明してください。`;
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+      headers:{'content-type':'application/json','x-api-key':CFG.key.trim(),
+        'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:CFG.model,max_tokens:1200,messages:[{role:'user',content:p}]})});
+    if(!r.ok) throw new Error('HTTP '+r.status+' '+(await r.text()).slice(0,120));
+    const j=await r.json();
+    rec.q.explanation=(j.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n').trim();
+    await dbPut(rec); drawQuiz();
+  }catch(e){ toast('解説の生成に失敗：'+e.message); btn.disabled=false; btn.textContent='AIに理由を解説してもらう'; }
+}
+
+/* ---------- 取り込み ---------- */
+let IMPORT=null;
+function renderAdd(){
+  view.innerHTML=`
+  <div class="card">
+    <h2>Mortalの検討URLから取り込む</h2>
+    <p class="small muted">mjai.ekyu.moe の検討ページのURLを貼り付けてください。AIの推奨と食い違った局面（error）だけを抽出して問題にします。<b>APIトークンは使いません（無料）</b>。</p>
+    <input id="url" placeholder="https://mjai.ekyu.moe/killerducky/?data=/report/xxxx.json" value="${esc(CFG.lastUrl)}">
+    <label>取り込む範囲</label>
+    <select id="sev">
+      <option value="0">すべてのミス</option>
+      <option value="0.15">やや大きいミス（確率差15pt以上）</option>
+      <option value="0.3">大きいミス（確率差30pt以上）</option>
+    </select>
+    <button class="btn-primary btn-block" id="go" style="margin-top:12px">取り込む</button>
+    <div id="imp" style="margin-top:10px"></div>
+    <details><summary>URLで取得できないとき</summary>
+      <p class="small muted">Safariでレポートの .json を開いて保存し、そのファイルを選んでください。</p>
+      <input type="file" id="jf" accept="application/json,.json">
+    </details>
+  </div>
+  <div class="card">
+    <h2>スクリーンショットから取り込む（任意）</h2>
+    <p class="small muted">牌譜画面の画像をClaudeに読ませて問題化します。<b>APIキーと利用料が必要</b>です（設定タブ）。URLが使えるならそちらが正確・無料です。</p>
+    <input type="file" id="imgf" accept="image/*" multiple style="display:none">
+    <button class="btn-ghost btn-block" id="pick" ${CFG.key?'':'disabled'}>${CFG.key?'📷 画像を選ぶ':'⚠️ 設定タブでAPIキーを登録してください'}</button>
+    <div id="queue" style="margin-top:10px"></div>
+  </div>`;
+  $('#go').addEventListener('click',doImport);
+  $('#jf').addEventListener('change',async e=>{
+    const f=e.target.files[0]; e.target.value=''; if(!f) return;
+    try{ const j=pickJSON(await f.text()); await ingest(j,'',f.name.replace(/\.json$/,'')); }
+    catch(err){ toast('読み込み失敗：'+err.message); }
+  });
+  $('#pick').addEventListener('click',()=>$('#imgf').click());
+  $('#imgf').addEventListener('change',e=>{
+    const fs=Array.from(e.target.files||[]); e.target.value='';
+    fs.forEach(f=>QUEUE.unshift({id:uid(),file:f,state:'wait',msg:'待機中'}));
+    drawQueue(); runQueue();
+  });
+  drawQueue();
+}
+async function doImport(){
+  const box=$('#imp'), input=$('#url').value;
+  box.innerHTML='<span class="spin"></span> 準備中…';
+  let url;
+  try{ url=reportUrlFrom(input); }catch(e){ box.innerHTML=`<span style="color:var(--bad)">${esc(e.message)}</span>`; return; }
+  CFG.lastUrl=input.trim();
+  try{
+    const rep=await fetchReport(url,m=>{box.innerHTML=`<span class="spin"></span> ${esc(m)}`;});
+    const id=(url.match(/([0-9a-f]{6,})\.json/i)||[,'rep'])[1];
+    await ingest(rep,input.trim(),id,box);
+  }catch(e){ box.innerHTML=`<span style="color:var(--bad)">${esc(e.message)}</span>`; }
+}
+async function ingest(rep,srcUrl,reportId,box){
+  box=box||$('#imp');
+  const thr=parseFloat(($('#sev')&&$('#sev').value)||'0');
+  let probs=extractProblems(rep,srcUrl,reportId);
+  const total=probs.length;
+  if(thr>0) probs=probs.filter(p=>p.q.severity==null||p.q.severity>=thr);
+  const existing=new Set((await dbAll()).map(r=>r.id));
+  const fresh=probs.filter(p=>!existing.has(p.id));
+  for(const p of fresh) await dbPut(p);
+  const rv=rep.review;
+  box.innerHTML=`<div class="queue-item">
+    <b>取り込み完了</b><br>
+    <span class="small muted">検討局面 ${rv.total_reviewed} / 一致 ${rv.total_matches} / ミス ${rv.total_reviewed-rv.total_matches}</span><br>
+    <span class="small">何切る問題として抽出：${total}件${thr>0?`（うち条件該当 ${probs.length}件）`:''}<br>
+    新規保存：<b>${fresh.length}件</b>${probs.length-fresh.length>0?`（既に取り込み済み ${probs.length-fresh.length}件）`:''}</span>
+    ${fresh.length?`<button class="btn-primary btn-block btn-sm" id="tostart" style="margin-top:8px">クイズを開始する</button>`:''}
+  </div>`;
+  const b=$('#tostart'); if(b) b.addEventListener('click',()=>{QUIZ=null;TAB='quiz';$$('nav button').forEach(x=>x.classList.toggle('on',x.dataset.tab==='quiz'));render();});
+}
+
+/* ---------- 画像取り込み（任意・API使用） ---------- */
+let QUEUE=[], running=false;
+function fileToImage(f){return new Promise((res,rej)=>{const fr=new FileReader();
+  fr.onload=()=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=fr.result;};fr.onerror=rej;fr.readAsDataURL(f);});}
+function imgURL(im,max,q){const sc=Math.min(1,max/Math.max(im.width,im.height));
+  const c=document.createElement('canvas');c.width=Math.round(im.width*sc);c.height=Math.round(im.height*sc);
+  c.getContext('2d').drawImage(im,0,0,c.width,c.height);return c.toDataURL('image/jpeg',q||.9);}
+function imgBlock(u){const m=u.match(/^data:([^;]+);base64,(.*)$/);return {type:'image',source:{type:'base64',media_type:m[1],data:m[2]}};}
+async function callClaude(blocks,mx){
+  const k=CFG.key.trim(); if(!k) throw new Error('APIキーが未設定です');
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+    headers:{'content-type':'application/json','x-api-key':k,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:CFG.model,max_tokens:mx||8000,messages:[{role:'user',content:blocks}]})});
+  if(!r.ok){let t='';try{t=await r.text()}catch(e){} let m=t;try{m=JSON.parse(t).error.message}catch(e){}
+    throw new Error('APIエラー '+r.status+'：'+String(m).slice(0,200));}
+  const j=await r.json();
+  return (j.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
+}
+const IMG_PROMPT=`麻雀の牌譜検討画面（Mortal等）のスクリーンショットです。次を読み取ってJSONだけ出力してください。
+画面下部の横一列が自分の手牌で、少し離れた右端の1枚がツモ牌です。牌の上の緑の縦棒はAIの推奨度で、最も高い牌がAIの推奨打牌。赤枠は実際に打たれた牌です。
+表記: 1m..9m(萬) 1p..9p(筒) 1s..9s(索) 1z=東 2z=南 3z=西 4z=北 5z=白 6z=發 7z=中 赤5は0m/0p/0s
+{"isMahjong":true,"roundText":"東1局","honba":0,"seatText":"東家","junme":6,
+"dora":["3s"],"hand":["3m","4m"],"drawn":"5p","answer":"1s","actual":"1s",
+"melds":[["3m","4m","5m"]],"discards":{"self":[],"shimocha":[],"toimen":[],"kamicha":[]},
+"scores":{"self":25000,"shimocha":25000,"toimen":25000,"kamicha":25000},"explanation":"..."}`;
+function pj(t){const s=t.trim().replace(/^\`\`\`(?:json)?/i,'').replace(/\`\`\`$/,'');
+  const a=s.indexOf('{'),b=s.lastIndexOf('}'); if(a<0)throw new Error('JSONを取り出せません'); return JSON.parse(s.slice(a,b+1));}
+async function analyzeImage(file,onStep){
+  onStep&&onStep('画像を準備中…');
+  const im=await fileToImage(file), full=imgURL(im,1568,.9);
+  onStep&&onStep('Claudeが解析中…');
+  const A=pj(await callClaude([imgBlock(full),{type:'text',text:IMG_PROMPT}],8000));
+  if(A.isMahjong===false) throw new Error('麻雀の画面として認識できませんでした');
+  let hand=normList(A.hand), drawn=normTile(A.drawn), answer=normTile(A.answer), actual=normTile(A.actual);
+  if(!hand.length) throw new Error('手牌を読み取れませんでした');
+  const all=drawn?hand.concat([drawn]):hand.slice();
+  if(answer&&all.indexOf(answer)<0) answer=all.find(t=>loose(t)===loose(answer))||null;
+  if(!answer) answer=actual||all[all.length-1];
+  const rv=t=>normList(t).map(p=>({pai:p,t:0,r:0}));
+  const d=A.discards||{}, s=A.scores||{};
+  const orMap={'東家':0,'南家':3,'西家':2,'北家':1};
+  return {image:full, st:{roundText:A.roundText||'',honba:A.honba||0,seatText:A.seatText||'',oyaRel:(orMap[A.seatText]||0),junme:A.junme||null,
+      left:null,dora:normList(A.dora),scores:[s.self||0,s.shimocha||0,s.toimen||0,s.kamicha||0],riichi:[0,0,0,0],
+      rivers:[rv(d.self),rv(d.shimocha),rv(d.toimen),rv(d.kamicha)],
+      fuuros:[(A.melds||[]).map(m=>({type:'',tiles:normList(m)})),[],[],[]],
+      hand:sortTiles(hand),drawn,names:['自分','下家','対面','上家']},
+    q:{answer,actual,candidates:answer?[{tile:answer,prob:1}]:[],shanten:null,furiten:false,
+       actualType:'dahai',expectedType:'dahai',severity:null,explanation:A.explanation||''}};
+}
+function drawQueue(){
+  const box=$('#queue'); if(!box) return;
+  if(!QUEUE.length){box.innerHTML='';return;}
+  box.innerHTML=QUEUE.map(q=>{
+    if(q.state==='done') return `<div class="queue-item" data-id="${q.id}">
+      <div class="boardwrap">${boardSVG({st:q.result.st,q:q.result.q},true)}</div>
+      <p class="small muted" style="margin:8px 0 0">読み取り結果です。正解が違う場合は破棄してください。</p>
+      <div class="row" style="margin-top:8px"><button class="btn-primary grow" data-save="${q.id}">保存</button>
+      <button class="btn-ghost" data-drop="${q.id}">破棄</button></div></div>`;
+    if(q.state==='error') return `<div class="queue-item" data-id="${q.id}">
+      <p style="color:var(--bad);margin:0 0 6px"><b>失敗</b></p><p class="small muted">${esc(q.error)}</p>
+      <div class="row" style="margin-top:8px"><button class="btn-ghost grow" data-retry="${q.id}">再試行</button>
+      <button class="btn-ghost" data-drop="${q.id}">削除</button></div></div>`;
+    return `<div class="queue-item"><span class="spin"></span> ${esc(q.msg)} <span class="small muted">${esc(q.file.name.slice(0,20))}</span></div>`;
+  }).join('');
+  $$('[data-save]',box).forEach(b=>b.addEventListener('click',async()=>{
+    const q=QUEUE.find(x=>x.id===b.dataset.save); if(!q) return;
+    await dbPut({id:uid(),createdAt:Date.now(),src:'image',srcUrl:'',image:q.result.image,
+      st:q.result.st,q:q.result.q,status:'new',review:false,attempts:0,correctCount:0,wrongCount:0,lastAnsweredAt:null});
+    QUEUE=QUEUE.filter(x=>x.id!==b.dataset.save); drawQueue(); toast('保存しました');
+  }));
+  $$('[data-drop]',box).forEach(b=>b.addEventListener('click',()=>{QUEUE=QUEUE.filter(x=>x.id!==b.dataset.drop);drawQueue();}));
+  $$('[data-retry]',box).forEach(b=>b.addEventListener('click',()=>{
+    const q=QUEUE.find(x=>x.id===b.dataset.retry); if(q){q.state='wait';q.msg='待機中';drawQueue();runQueue();}}));
+}
+async function runQueue(){
+  if(running) return; running=true;
+  try{ while(true){
+    const q=QUEUE.slice().reverse().find(x=>x.state==='wait'); if(!q) break;
+    q.state='work'; q.msg='解析中…'; drawQueue();
+    try{ q.result=await analyzeImage(q.file,m=>{q.msg=m;drawQueue();}); q.state='done'; }
+    catch(e){ q.state='error'; q.error=e.message||String(e); }
+    drawQueue();
+  }} finally{ running=false; }
+}
+
+/* ---------- 一覧 ---------- */
+let FILTER='all';
+async function renderList(){
+  const all=(await dbAll()).sort((a,b)=>(b.createdAt-a.createdAt)||((a.seq||0)-(b.seq||0))), s=await stats();
+  const f={all:()=>true,new:r=>r.status==='new'||!r.status,wrong:r=>r.status==='wrong',
+    correct:r=>r.status==='correct',review:r=>!!r.review}[FILTER];
+  const items=all.filter(f);
+  view.innerHTML=`<div class="filters">
+    <button data-f="all" class="${FILTER==='all'?'on':''}">全部 ${s.total}</button>
+    <button data-f="wrong" class="${FILTER==='wrong'?'on':''}">不正解 ${s.wrong}</button>
+    <button data-f="review" class="${FILTER==='review'?'on':''}">要復習 ${s.review}</button>
+    <button data-f="new" class="${FILTER==='new'?'on':''}">未出題 ${s.new}</button>
+    <button data-f="correct" class="${FILTER==='correct'?'on':''}">正解 ${s.correct}</button></div>
+    ${items.length?items.map(r=>`<div class="list-item" data-open="${esc(r.id)}">
+      <div class="row" style="gap:6px;margin-bottom:4px">
+        ${r.status==='wrong'?'<span class="badge b-wrong">不正解</span>':r.status==='correct'?'<span class="badge b-correct">正解</span>':'<span class="badge b-new">未出題</span>'}
+        ${r.review?'<span class="badge b-review">要復習</span>':''}
+        <span class="small muted">${esc(r.st.roundText||'')} ${r.st.junme?r.st.junme+'巡目':''}</span>
+        <span class="grow"></span><span class="small muted">${new Date(r.createdAt).toLocaleDateString('ja-JP')}</span></div>
+      ${tilesHTML((r.st.drawn?r.st.hand.concat([r.st.drawn]):r.st.hand).slice(0,14))}
+    </div>`).join(''):'<p class="muted center">該当なし</p>'}`;
+  $$('.filters button').forEach(b=>b.addEventListener('click',()=>{FILTER=b.dataset.f;renderList();}));
+  $$('[data-open]').forEach(b=>b.addEventListener('click',()=>openDetail(b.dataset.open)));
+}
+async function openDetail(id){
+  const r=await dbGet(id); if(!r) return;
+  view.innerHTML=`<button class="btn-ghost btn-sm" id="back">← 一覧に戻る</button>
+    <div class="card" style="margin-top:10px">
+      <div class="row" style="margin-bottom:8px">
+        ${r.status==='wrong'?'<span class="badge b-wrong">不正解</span>':r.status==='correct'?'<span class="badge b-correct">正解</span>':'<span class="badge b-new">未出題</span>'}
+        ${r.review?'<span class="badge b-review">要復習</span>':''}<span class="grow"></span>
+        <span class="small muted">${new Date(r.createdAt).toLocaleString('ja-JP')}</span></div>
+      <div class="boardwrap">${boardSVG(r,true)}</div>
+      ${candListHTML(r.q)}
+      ${r.q.explanation?`<div class="expl">${esc(r.q.explanation)}</div>`:''}
+      ${r.image?`<details><summary>元の画像</summary><img class="shot" src="${r.image}"></details>`:''}
+      ${r.srcUrl?`<p class="small muted" style="margin-top:8px"><a href="${esc(r.srcUrl)}" target="_blank" rel="noopener">元の検討ページ</a></p>`:''}
+      <div class="row" style="margin-top:12px">
+        <button class="${r.review?'btn-warn':'btn-ghost'} grow" id="rev">${r.review?'★ 要復習を解除':'☆ 要復習にする'}</button>
+        <button class="btn-ghost" id="reset">未出題に戻す</button></div>
+      <button class="btn-danger btn-block btn-sm" id="del" style="margin-top:8px">削除</button>
+    </div>`;
+  $('#back').addEventListener('click',renderList);
+  $('#rev').addEventListener('click',async()=>{r.review=!r.review;await dbPut(r);openDetail(id);});
+  $('#reset').addEventListener('click',async()=>{r.status='new';await dbPut(r);toast('未出題に戻しました');openDetail(id);});
+  $('#del').addEventListener('click',async()=>{if(!confirm('削除しますか？'))return;await dbDel(id);toast('削除しました');renderList();});
+}
+
+/* ---------- 設定 ---------- */
+async function renderSettings(){
+  const s=await stats();
+  view.innerHTML=`<div class="card">
+    <h2>データ</h2>
+    <div class="stats" style="margin-bottom:10px">
+      <div><span class="n">${s.total}</span><span class="l">問題</span></div>
+      <div><span class="n" style="color:var(--bad)">${s.wrong}</span><span class="l">不正解</span></div>
+      <div><span class="n" style="color:var(--review)">${s.review}</span><span class="l">要復習</span></div>
+      <div><span class="n" style="color:var(--good)">${s.correct}</span><span class="l">正解</span></div></div>
+    <p class="small muted">問題はこの端末のブラウザ内に保存され、取り込むほど蓄積されます。同じURLを再取り込みしても重複しません。</p>
+    <div class="row"><button class="btn-ghost grow" id="exp">バックアップ書き出し</button>
+      <button class="btn-ghost grow" id="imp">読み込み</button></div>
+    <input type="file" id="impf" accept="application/json" style="display:none">
+    <button class="btn-danger btn-block btn-sm" id="clr" style="margin-top:10px">すべて削除</button>
+  </div>
+  <div class="card">
+    <h2>取得プロキシ（上級者向け）</h2>
+    <p class="small muted">mjai.ekyu.moe はCORSを許可していないため、公開プロキシ経由で取得します。うまくいかない場合のみ、自前のプロキシURLを指定してください（{url}がURLエンコード済み、{raw}が生URLに置換されます）。</p>
+    <input id="proxy" value="${esc(CFG.proxy)}" placeholder="https://example.com/proxy?u={url}">
+  </div>
+  <div class="card">
+    <h2>Claude APIキー（任意）</h2>
+    <p class="small muted">スクリーンショット取り込みとAI解説にのみ使用します。URL取り込みだけなら不要です。キーはこの端末にのみ保存されます。</p>
+    <input type="password" id="key" value="${esc(CFG.key)}" placeholder="sk-ant-...">
+    <label>モデル</label>
+    <select id="model">
+      <option value="claude-opus-5">claude-opus-5</option>
+      <option value="claude-sonnet-5">claude-sonnet-5</option>
+      <option value="claude-haiku-4-5">claude-haiku-4-5</option>
+    </select>
+  </div>
+  <button class="btn-primary btn-block" id="save">設定を保存</button>
+  <p class="small muted center" style="margin-top:10px">麻雀 何切るクイズ / データは端末内のみ</p>`;
+  $('#model').value=CFG.model;
+  $('#save').addEventListener('click',()=>{CFG.key=$('#key').value.trim();CFG.model=$('#model').value;CFG.proxy=$('#proxy').value.trim();toast('保存しました');});
+  $('#exp').addEventListener('click',async()=>{
+    const all=await dbAll();
+    const b=new Blob([JSON.stringify({v:2,exportedAt:Date.now(),items:all})],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(b);
+    a.download='mahjong-quiz-'+new Date().toISOString().slice(0,10)+'.json';
+    document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);});
+  $('#imp').addEventListener('click',()=>$('#impf').click());
+  $('#impf').addEventListener('change',async e=>{
+    const f=e.target.files[0];e.target.value='';if(!f)return;
+    try{const j=JSON.parse(await f.text());const ex=new Set((await dbAll()).map(r=>r.id));let n=0;
+      for(const it of (j.items||[])) if(!ex.has(it.id)){await dbPut(it);n++;}
+      toast(n+'件読み込みました');renderSettings();}catch(err){toast('失敗：'+err.message);}});
+  $('#clr').addEventListener('click',async()=>{if(!confirm('すべての問題を削除します。よろしいですか？'))return;
+    await dbClear();QUIZ=null;toast('削除しました');renderSettings();});
+}
+render();
+</script>
+</body>
+</html>
