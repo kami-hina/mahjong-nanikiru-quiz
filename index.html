@@ -65,6 +65,8 @@ svg.board{display:block;width:100%;height:auto}
 img.tile{display:block;width:100%;height:auto;background:#fff;padding:6%;border-radius:11%;box-sizing:border-box;filter:brightness(92%) saturate(80%);box-shadow:inset 0 0 2px rgba(0,0,0,.45)}
 svg.board image{filter:brightness(92%) saturate(80%)}
 svg.board image.tsu{filter:brightness(75%) saturate(80%)}
+.errbox{background:#4a1c1c;border:1px solid #a04a4a;border-radius:12px;padding:12px}
+.errbox .ttl{font-weight:800;color:#ffd7d7;font-size:15px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(80px + var(--safe-b));background:#08262a;
   border:1px solid var(--line);padding:10px 14px;border-radius:12px;z-index:99;max-width:92%;font-size:13px;box-shadow:0 6px 24px rgba(0,0,0,.4)}
 .expl{background:#0a262a;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:14px;margin-top:10px;white-space:pre-wrap}
@@ -91,7 +93,7 @@ img.shot{width:100%;border-radius:10px;border:1px solid var(--line)}
 </nav>
 <script>
 "use strict";
-const APP_VERSION='2026-08-30e';
+const APP_VERSION='2026-08-30f';
 /* ========================= 小物 ========================= */
 const $=(s,r)=>(r||document).querySelector(s), $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -799,7 +801,7 @@ function renderAdd(){
     <button class="btn-ghost btn-block" id="pick" ${CFG.key?'':'disabled'}>${CFG.key?'📷 画像を選ぶ':'⚠️ 設定タブでAPIキーを登録してください'}</button>
     <div id="queue" style="margin-top:10px"></div>
   </div>`;
-  $('#go').addEventListener('click',doImport);
+  $('#go').addEventListener('click',()=>doImport(false));
   $('#jf').addEventListener('change',async e=>{
     const f=e.target.files[0]; e.target.value=''; if(!f) return;
     try{ const j=pickJSON(await f.text()); await ingest(j,'',f.name.replace(/\.json$/,'')); }
@@ -844,20 +846,45 @@ async function restoreFrom(list){
   box.innerHTML=`<div class="queue-item"><b>復元完了</b><br><span class="small">追加：${added}問${updated?`／更新：${updated}問`:''}${err?`／失敗：${err}件`:''}</span></div>`;
   toast((added+updated)+'問を復元しました');
 }
-async function doImport(){
+// この牌譜がすでに取り込み済みかを調べる
+async function alreadyImported(reportId){
+  if(!reportId) return null;
+  const hit=(await dbAll()).filter(r=>r.reportId===reportId);
+  if(!hit.length) return null;
+  return {count:hit.length, at:Math.min.apply(null,hit.map(r=>r.createdAt||Date.now()))};
+}
+// 「すでにアップロード済みです」エラー画面
+function showDup(box,dup,retry){
+  box.innerHTML=`<div class="errbox">
+    <div class="ttl">⚠️ すでにアップロード済みです</div>
+    <p class="small" style="margin:6px 0 0">この牌譜は ${new Date(dup.at).toLocaleDateString('ja-JP')} に取り込み済みです（${dup.count}問）。</p>
+    <p class="small" style="margin:6px 0 10px">出題は「クイズ」タブから、内容の確認は「一覧」タブからどうぞ。</p>
+    <button class="btn-ghost btn-block btn-sm" id="force">それでも再取り込みする（学習状況は維持）</button>
+  </div>`;
+  $('#force').addEventListener('click',retry);
+}
+async function doImport(force){
   const box=$('#imp'), input=$('#url').value;
   box.innerHTML='<span class="spin"></span> 準備中…';
   let url;
   try{ url=reportUrlFrom(input); }catch(e){ box.innerHTML=`<span style="color:var(--bad)">${esc(e.message)}</span>`; return; }
   CFG.lastUrl=input.trim();
+  const id=(url.match(/([0-9a-f]{6,})\.json/i)||[,'rep'])[1];
+  if(!force){
+    const dup=await alreadyImported(id);
+    if(dup) return showDup(box,dup,()=>doImport(true));
+  }
   try{
     const rep=await fetchReport(url,m=>{box.innerHTML=`<span class="spin"></span> ${esc(m)}`;});
-    const id=(url.match(/([0-9a-f]{6,})\.json/i)||[,'rep'])[1];
-    await ingest(rep,input.trim(),id,box);
+    await ingest(rep,input.trim(),id,box,true);
   }catch(e){ box.innerHTML=`<span style="color:var(--bad)">${esc(e.message)}</span>`; }
 }
-async function ingest(rep,srcUrl,reportId,box){
+async function ingest(rep,srcUrl,reportId,box,force){
   box=box||$('#imp');
+  if(!force){
+    const dup=await alreadyImported(reportId);
+    if(dup) return showDup(box,dup,()=>ingest(rep,srcUrl,reportId,box,true));
+  }
   const thr=parseFloat(($('#sev')&&$('#sev').value)||'0');
   let probs=extractProblems(rep,srcUrl,reportId);
   const total=probs.length;
