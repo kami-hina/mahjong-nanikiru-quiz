@@ -46,12 +46,19 @@ nav button.on{color:var(--accent)}
 .b-wrong{background:#6d2020;color:#ffd7d7}.b-review{background:#7a4a12;color:#ffe3c0}
 .boardwrap{background:#0a2b2f;border:1px solid var(--line);border-radius:14px;padding:6px}
 svg.board{display:block;width:100%;height:auto}
+.modes{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.modebtn{background:#0a262a;border:1px solid var(--line);border-radius:12px;padding:12px 6px;text-align:center;color:var(--fg)}
+.modebtn .n{display:block;font-size:22px;font-weight:800;line-height:1.1}
+.modebtn .l{font-size:12px;color:var(--muted)}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center}
 .stats div{background:#0a262a;border:1px solid var(--line);border-radius:10px;padding:8px 2px}
 .stats .n{font-size:19px;font-weight:800;display:block}.stats .l{font-size:10px;color:var(--muted)}
 .filters{display:flex;gap:6px;overflow:auto;padding-bottom:4px;margin-bottom:10px}
 .filters button{white-space:nowrap;padding:7px 11px;font-size:13px;border-radius:999px;background:#0a262a;border:1px solid var(--line)}
 .filters button.on{background:var(--accent);color:#05221f;border-color:var(--accent)}
+.group{margin-bottom:16px}
+.ghead{background:#0a262a;border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px}
+.b-kind{background:#123f52;color:#bfe6f5}
 .list-item{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin-bottom:8px;cursor:pointer}
 .tstatic{display:flex;gap:2px;flex-wrap:wrap}.tstatic .tw{width:22px}.tw{position:relative}
 img.tile{display:block;width:100%;height:auto;background:#fff;padding:6%;border-radius:11%;box-sizing:border-box;filter:brightness(92%) saturate(80%);box-shadow:inset 0 0 2px rgba(0,0,0,.45)}
@@ -299,12 +306,22 @@ async function fetchReport(url,onStep){
   throw new Error('レポートを取得できませんでした（'+(lastErr&&lastErr.message)+'）。設定タブで自前のCORSプロキシを指定するか、JSONファイルを直接読み込んでください。');
 }
 
-/* mjaiログを再生して各打牌局面の完全な状態を復元 */
+/* mjaiログを再生して、打牌／鳴き の各判断ポイントの状態を完全復元する */
 function replay(rep){
   const PID=rep.player_id|0, log=rep.mjai_log||[];
   const names=(log[0]&&log[0].names)||['自分','下家','対面','上家'];
   const out=[]; let st=null, ki=-1;
   const rel=a=>((a-PID)%4+4)%4;
+  const snapshot=()=>({
+    bakaze:st.bakaze,kyoku:st.kyoku,honba:st.honba,oyaRel:rel(st.oya),
+    dora:st.dora.map(cvMjai).filter(Boolean),
+    scores:[0,1,2,3].map(r=>st.scores[(PID+r)%4]),
+    rivers:st.rivers.map(x=>x.map(o=>({pai:cvMjai(o.pai),t:o.tsumogiri?1:0,r:o.riichi?1:0}))),
+    riichi:st.riichi.slice(),
+    fuuros:st.fuuros.map(f=>f.map(m=>({type:m.type,tiles:(m.consumed||[]).concat(m.pai?[m.pai]:[]).map(cvMjai).filter(Boolean)}))),
+    handRaw:st.hand.slice(), drawn:st.drawn, left:st.left,
+    names:[0,1,2,3].map(r=>names[(PID+r)%4])
+  });
   for(const ev of log){
     if(ev.type==='start_kyoku'){
       ki++;
@@ -319,20 +336,18 @@ function replay(rep){
     if(ev.type==='reach'){ st.pending=ev.actor; continue; }
     if(ev.type==='reach_accepted'){ st.riichi[rel(ev.actor)]=1; continue; }
     if(ev.type==='dahai'){
+      // 自分の打牌／リーチ判断のポイント（切る前）
       if(ev.actor===PID){
-        out.push({ki, snap:{
-          bakaze:st.bakaze,kyoku:st.kyoku,honba:st.honba,oyaRel:rel(st.oya),
-          dora:st.dora.map(cvMjai).filter(Boolean),
-          scores:[0,1,2,3].map(r=>st.scores[(PID+r)%4]),
-          rivers:st.rivers.map(x=>x.map(o=>({pai:cvMjai(o.pai),t:o.tsumogiri?1:0,r:o.riichi?1:0}))),
-          riichi:st.riichi.slice(),
-          fuuros:st.fuuros.map(f=>f.map(m=>({type:m.type,tiles:(m.consumed||[]).concat(m.pai?[m.pai]:[]).map(cvMjai).filter(Boolean)}))),
-          handRaw:st.hand.slice(), drawn:st.drawn, left:st.left, names:[0,1,2,3].map(r=>names[(PID+r)%4])
-        }});
+        out.push({ki, kind:'discard', snap:snapshot()});
         const k=st.hand.indexOf(ev.pai); if(k>=0) st.hand.splice(k,1); st.drawn=null;
       }
       st.rivers[rel(ev.actor)].push({pai:ev.pai,tsumogiri:ev.tsumogiri,riichi:st.pending===ev.actor});
       if(st.pending===ev.actor) st.pending=-1;
+      // 他家の打牌 → 自分の鳴き判断のポイント（捨て牌を河に置いた状態）
+      if(ev.actor!==PID){
+        const sn=snapshot(); sn.callRel=rel(ev.actor); sn.callTile=cvMjai(ev.pai);
+        out.push({ki, kind:'call', snap:sn});
+      }
       continue;
     }
     if(['chi','pon','daiminkan','kakan','ankan'].indexOf(ev.type)>=0){
@@ -349,45 +364,83 @@ function replay(rep){
   }
   return out;
 }
+/* 行動の日本語表記 */
+function actionText(a){
+  if(!a) return '―';
+  const t=x=>tileName(cvMjai(x));
+  const cons=(a.consumed||[]).map(t).join('・');
+  switch(a.type){
+    case 'dahai': return '打 '+t(a.pai)+(a.tsumogiri?'（ツモ切り）':'');
+    case 'none': return 'スルー（鳴かない）';
+    case 'chi': return 'チー（手牌の '+cons+'）';
+    case 'pon': return 'ポン（手牌の '+cons+'）';
+    case 'daiminkan': return '大明カン';
+    case 'ankan': return '暗カン（'+cons+'）';
+    case 'kakan': return '加カン（'+t(a.pai)+'）';
+    case 'reach': return 'リーチ';
+    case 'hora': return (a.actor===a.target?'ツモ和了':'ロン和了');
+    case 'ryukyoku': return '九種九牌で流局';
+    default: return a.type;
+  }
+}
 const msKey=a=>a.slice().sort().join(',');
 function extractProblems(rep,srcUrl,reportId){
   const snaps=replay(rep);
-  const byK={}; snaps.forEach(s=>{(byK[s.ki]=byK[s.ki]||[]).push(s.snap);});
+  const byK={}; snaps.forEach(x=>{(byK[x.ki]=byK[x.ki]||[]).push(x);});
   const probs=[]; const impAt=Date.now();
+  const PID=rep.player_id|0, rel=a=>((a-PID)%4+4)%4;
   rep.review.kyokus.forEach((k,ki)=>{
     const list=byK[ki]||[]; let ptr=0;
     k.entries.forEach((e,ei)=>{
-      if(!e.actual||(e.actual.type!=='dahai'&&e.actual.type!=='reach')) return;
-      // 手牌の一致でスナップショットを同定
-      const want=msKey((e.state&&e.state.tehai||[]).map(cvMjai).filter(Boolean));
-      let found=-1;
-      for(let i=ptr;i<Math.min(list.length,ptr+6);i++){
-        if(msKey(list[i].handRaw.map(cvMjai).filter(Boolean))===want){found=i;break;}
+      if(!e.expected||!e.actual||!e.state) return;
+      const want=msKey((e.state.tehai||[]).map(cvMjai).filter(Boolean));
+      const isDiscard=[e.expected.type,e.actual.type].some(t=>t==='dahai'||t==='reach');
+      const wantRel=(e.last_actor!=null)? rel(e.last_actor):null, wantTile=cvMjai(e.tile);
+      // 手牌・判断の種別・対象牌の一致度が最も高いスナップショットを選ぶ
+      let found=-1, best=-1;
+      for(let i=ptr;i<Math.min(list.length,ptr+12);i++){
+        const it=list[i];
+        if(msKey(it.snap.handRaw.map(cvMjai).filter(Boolean))!==want) continue;
+        let sc=0;
+        if((it.kind==='discard')===isDiscard) sc+=2;
+        if(it.kind==='call'){ if(wantRel!=null&&it.snap.callRel===wantRel) sc+=3;
+                              if(wantTile&&it.snap.callTile===wantTile) sc+=3; }
+        else if(wantTile&&it.snap.drawn&&cvMjai(it.snap.drawn)===wantTile) sc+=3;
+        if(sc>best){ best=sc; found=i; }
+        if(sc>=8) break;
       }
       if(found<0) return;
       ptr=found+1;
       if(e.is_equal) return;
-      if(!e.expected||e.expected.type!=='dahai') return;
-      const snap=list[found];
-      const cands=(e.details||[]).filter(d=>d.action&&d.action.type==='dahai'&&cvMjai(d.action.pai))
-        .map(d=>({tile:cvMjai(d.action.pai),prob:d.prob,q:d.q_value})).slice(0,14);
-      const answer=cvMjai(e.expected.pai);
-      const actual=cvMjai(e.actual.pai);
+      const item=list[found], snap=item.snap;
+      const kind = item.kind==='call' ? 'call'
+                 : ([e.expected.type,e.actual.type].indexOf('reach')>=0 ? 'riichi' : 'dahai');
+      const cands=(e.details||[]).filter(d=>d.action).map(d=>({
+        tile: d.action.type==='dahai'? cvMjai(d.action.pai):null,
+        type: d.action.type, text: actionText(d.action), prob: d.prob, q: d.q_value
+      })).slice(0,16);
+      const answer=e.expected.type==='dahai'? cvMjai(e.expected.pai):null;
+      const actual=e.actual.type==='dahai'? cvMjai(e.actual.pai):null;
       const drawn=cvMjai(snap.drawn);
       let hand=snap.handRaw.map(cvMjai).filter(Boolean);
       if(drawn){ const i=hand.indexOf(drawn); if(i>=0) hand.splice(i,1); }
       hand=sortTiles(hand);
       const topP=cands.length?cands[0].prob:null;
-      const actP=(cands.find(c=>c.tile===actual)||{}).prob;
+      const actC=cands.find(c=>c.type===e.actual.type && (c.tile==null||c.tile===actual));
       probs.push({
         id:reportId+'-'+ki+'-'+ei, createdAt:impAt, seq:probs.length, src:'mortal', srcUrl, reportId,
         st:{roundText:(snap.bakaze==='E'?'東':snap.bakaze==='S'?'南':'西')+snap.kyoku+'局', oyaRel:snap.oyaRel,
             honba:snap.honba, seatText:['東家','南家','西家','北家'][(4-snap.oyaRel)%4],
-            junme:e.junme, left:(e.tiles_left!=null?e.tiles_left:snap.left), dora:snap.dora, scores:snap.scores, riichi:snap.riichi,
-            rivers:snap.rivers, fuuros:snap.fuuros, hand, drawn, names:snap.names},
-        q:{answer, actual, candidates:cands, shanten:(e.shanten==null?null:e.shanten),
-           furiten:!!e.at_furiten, actualType:e.actual.type, expectedType:e.expected.type,
-           severity:(topP!=null&&actP!=null)? (topP-actP):null, explanation:''},
+            junme:e.junme, left:(e.tiles_left!=null?e.tiles_left:snap.left), dora:snap.dora,
+            scores:snap.scores, riichi:snap.riichi, rivers:snap.rivers, fuuros:snap.fuuros,
+            hand, drawn, names:snap.names,
+            callRel:(snap.callRel!=null?snap.callRel:null), callTile:snap.callTile||null},
+        q:{kind, answer, actual,
+           answerText:actionText(e.expected), actualText:actionText(e.actual),
+           answerType:e.expected.type, actualType:e.actual.type,
+           answerConsumed:(normList(e.expected.consumed).length?normList(e.expected.consumed):null),
+           candidates:cands, shanten:(e.shanten==null?null:e.shanten), furiten:!!e.at_furiten,
+           severity:(topP!=null&&actC&&actC.prob!=null)?(topP-actC.prob):null, explanation:''},
         status:'new', review:false, attempts:0, correctCount:0, wrongCount:0, lastAnsweredAt:null
       });
     });
@@ -396,8 +449,18 @@ function extractProblems(rep,srcUrl,reportId){
 }
 
 /* ========================= 卓図（マスク／答え表示） ========================= */
+// 問題文（打牌／リーチ／鳴き）
+function questionText(rec){
+  const q=rec.q||{}, st=rec.st||{};
+  if(q.kind==='call'){
+    const who=['自分','下家','対面','上家'][st.callRel||0];
+    return who+'の '+tileName(st.callTile)+'、鳴く？';
+  }
+  if(q.kind==='riichi') return 'リーチする？　何を切る？';
+  return '何を切る？';
+}
 const W=720;
-function riverBlock(list,cx,cy,rot,tw){
+function riverBlock(list,cx,cy,rot,tw,markLast){
   const cols=6, gap=2, th=tw*TILE_AR;
   const rows=Math.max(1,Math.ceil(list.length/cols));
   const bw=cols*(tw+gap)-gap, bh=rows*(th+gap)-gap;
@@ -405,7 +468,9 @@ function riverBlock(list,cx,cy,rot,tw){
   list.forEach((o,i)=>{
     const c=i%cols, r=Math.floor(i/cols);
     const x=c*(tw+gap), y=r*(th+gap);
-    s+=put(o.pai,x,y,tw,o.r?90:0,'',o.t);
+    const mark=(markLast&&i===list.length-1)
+      ? `<rect x="-2.5" y="-2.5" width="${tw+5}" height="${th+5}" rx="6" fill="none" stroke="${markLast}" stroke-width="3.5"/>` : '';
+    s+=put(o.pai,x,y,tw,o.r?90:0,mark,o.t);
   });
   return s+'</g>';
 }
@@ -418,7 +483,7 @@ function boardSVG(rec,reveal){
   const st=rec.st, q=rec.q;
   const hand=st.hand||[], drawn=st.drawn;
   const all=drawn? hand.concat([drawn]):hand.slice();
-  const H=770;
+  const H=800;
   const myWind=(4-((st.oyaRel!=null)?st.oyaRel:0))%4;
   const wd=['東','南','西','北'];
   let s=`<svg class="board" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">`;
@@ -448,10 +513,13 @@ function boardSVG(rec,reveal){
   });
   // 河
   const riv=st.rivers||[[],[],[],[]];
-  s+=riverBlock(riv[2].slice(0,24),360,155,180,30);
-  s+=riverBlock(riv[0].slice(0,24),360,448,0,30);
-  s+=riverBlock(riv[3].slice(0,24),150,305,90,30);
-  s+=riverBlock(riv[1].slice(0,24),570,305,270,30);
+  const callMark=(st.callRel!=null)
+    ? (reveal ? (q.answerType&&q.answerType!=='none' ? '#3ddc97' : '#ff6b6b') : '#ffd166') : null;
+  const mk=i=>(st.callRel===i? callMark : null);
+  s+=riverBlock(riv[2].slice(0,24),360,155,180,30,mk(2));
+  s+=riverBlock(riv[0].slice(0,24),360,448,0,30,null);
+  s+=riverBlock(riv[3].slice(0,24),150,305,90,30,mk(3));
+  s+=riverBlock(riv[1].slice(0,24),570,305,270,30,mk(1));
   // 副露（他家）
   const fu=st.fuuros||[[],[],[],[]];
   if(fu[2]&&fu[2].length) s+=meldGroup(fu[2],440,66,26);
@@ -475,22 +543,32 @@ function boardSVG(rec,reveal){
     });
   }
   let ansDone=0, actDone=0;
+  const needCons=(reveal&&q.answerConsumed)? q.answerConsumed.slice():[];
+  const ringG=`<rect x="-3" y="-3" width="${tw+6}" height="${th+6}" rx="8" fill="none" stroke="#3ddc97" stroke-width="4"/>`;
+  const ringR=`<rect x="-3" y="-3" width="${tw+6}" height="${th+6}" rx="8" fill="none" stroke="#ff6b6b" stroke-width="4"/>`;
   all.forEach((t,i)=>{
     let extra='';
     if(reveal){
-      if(t===q.answer&&!ansDone){ ansDone=1; extra=`<rect x="-3" y="-3" width="${tw+6}" height="${th+6}" rx="8" fill="none" stroke="#3ddc97" stroke-width="4"/>`; }
-      else if(t===q.actual&&t!==q.answer&&!actDone){ actDone=1; extra=`<rect x="-3" y="-3" width="${tw+6}" height="${th+6}" rx="8" fill="none" stroke="#ff6b6b" stroke-width="4"/>`; }
+      const ci=needCons.indexOf(t);
+      if(t===q.answer&&!ansDone){ ansDone=1; extra=ringG; }
+      else if(ci>=0){ needCons.splice(ci,1); extra=ringG; }
+      else if(t===q.actual&&t!==q.answer&&!actDone){ actDone=1; extra=ringR; }
     }
     s+=put(t,xs[i],hy,tw,0,extra);
   });
   s+=`<text x="24" y="${hy-14}" font-size="17" fill="#9dc4c4" font-family="sans-serif">自分（${wd[myWind]}家）${drawn?'　└ ツモ':''}</text>`;
+  if(st.callRel!=null&&st.callTile){
+    const who=['自分','下家','対面','上家'][st.callRel];
+    s+=`<text x="${W-24}" y="${hy-14}" text-anchor="end" font-size="17" fill="#ffd166" font-family="sans-serif">${who}が ${esc(tileName(st.callTile))} を切った</text>`;
+  }
   // 自分の副露
   if(fu[0]&&fu[0].length) s+=meldGroup(fu[0],430,712,26);
+  const ly=hy+th+34;
   if(reveal){
-    s+=`<text x="24" y="${hy+th+34}" font-size="20" font-weight="700" fill="#3ddc97" font-family="sans-serif">推奨 ${esc(tileName(q.answer))}</text>`;
-    s+=`<text x="190" y="${hy+th+34}" font-size="20" fill="#ff9b9b" font-family="sans-serif">実戦 ${esc(tileName(q.actual))}${q.actualType==='reach'?'（リーチ）':''}</text>`;
+    s+=`<text x="24" y="${ly}" font-size="19" font-weight="700" fill="#3ddc97" font-family="sans-serif">推奨 ${esc(q.answerText||tileName(q.answer))}</text>`;
+    s+=`<text x="24" y="${ly+26}" font-size="19" fill="#ff9b9b" font-family="sans-serif">実戦 ${esc(q.actualText||tileName(q.actual))}</text>`;
   } else {
-    s+=`<text x="24" y="${hy+th+34}" font-size="20" font-weight="700" fill="#ffd166" font-family="sans-serif">何を切る？</text>`;
+    s+=`<text x="24" y="${ly}" font-size="20" font-weight="700" fill="#ffd166" font-family="sans-serif">${esc(questionText(rec))}</text>`;
   }
   return s+'</svg>';
 }
@@ -504,18 +582,32 @@ async function stats(){ const a=await dbAll(); const s={total:a.length,new:0,wro
   a.forEach(r=>{ if(r.review)s.review++; if(r.status==='wrong')s.wrong++; else if(r.status==='correct')s.correct++; else s.new++; }); return s; }
 
 /* ---------- クイズ ---------- */
-let QUIZ=null; // {rec, reveal}
-async function pickNext(prevId){
-  const all=await dbAll(); if(!all.length) return null;
+let QUIZ=null; // {rec, reveal, mode}
+const MODES={
+  auto:  {label:'おまかせ', desc:'不正解 → 要復習 → 未出題 の順', f:null},
+  wrong: {label:'不正解だけ', desc:'間違えた問題だけを出題', f:r=>r.status==='wrong'},
+  review:{label:'要復習だけ', desc:'要復習にした問題だけを出題', f:r=>!!r.review},
+  new:   {label:'未出題だけ', desc:'まだ解いていない問題だけを出題', f:r=>r.status!=='wrong'&&r.status!=='correct'},
+  correct:{label:'正解済みだけ', desc:'正解した問題の解き直し', f:r=>r.status==='correct'}
+};
+function pickFrom(pool,prevId){
+  const c=pool.filter(r=>r.id!==prevId);
+  if(!c.length) return null;
+  c.sort((a,b)=>(a.lastAnsweredAt||0)-(b.lastAnsweredAt||0));
+  const head=c.slice(0,Math.max(1,Math.ceil(c.length*0.4)));
+  return head[Math.floor(Math.random()*head.length)];
+}
+const srcKey=r=>r.reportId||('image:'+(r.src||''));
+async function pickNext(prevId,mode,src){
+  let all=await dbAll();
+  if(src) all=all.filter(r=>srcKey(r)===src);
+  if(!all.length) return null;
+  const m=MODES[mode]||MODES.auto;
+  if(m.f) return pickFrom(all.filter(m.f),prevId);   // 指定リストの中だけで出題（尽きたら null）
   const pools=[ all.filter(r=>r.status==='wrong'),
                 all.filter(r=>r.review&&r.status!=='wrong'),
                 all.filter(r=>r.status!=='correct'&&r.status!=='wrong'&&!r.review) ];
-  for(const p of pools){
-    const c=p.filter(r=>r.id!==prevId);
-    if(c.length){ c.sort((a,b)=>(a.lastAnsweredAt||0)-(b.lastAnsweredAt||0));
-      const head=c.slice(0,Math.max(1,Math.ceil(c.length*0.4)));
-      return head[Math.floor(Math.random()*head.length)]; }
-  }
+  for(const p of pools){ const r=pickFrom(p,prevId); if(r) return r; }
   let c=all.filter(r=>r.id!==prevId); if(!c.length) c=all;
   return c[Math.floor(Math.random()*c.length)];
 }
@@ -528,39 +620,55 @@ function poolLabel(r){
 async function renderQuiz(){
   if(QUIZ) return drawQuiz();
   const s=await stats();
+  const mb=(m,n,color)=>`<button class="modebtn" data-m="${m}" ${n?'':'disabled'}>
+      <span class="n" style="color:${color}">${n}</span><span class="l">${MODES[m].label}</span></button>`;
   view.innerHTML=`<div class="card">
     <h2>何切るクイズ</h2>
-    <p class="small muted">不正解 → 要復習 → 未出題 の順に出題します。答えはマスクされています。</p>
-    <div class="stats" style="margin:10px 0">
-      <div><span class="n" style="color:var(--bad)">${s.wrong}</span><span class="l">不正解</span></div>
-      <div><span class="n" style="color:var(--review)">${s.review}</span><span class="l">要復習</span></div>
-      <div><span class="n">${s.new}</span><span class="l">未出題</span></div>
-      <div><span class="n" style="color:var(--good)">${s.correct}</span><span class="l">正解</span></div>
+    <p class="small muted">解きたいリストを選んでください。選んだリストの中だけを出題します。</p>
+    <div class="modes" style="margin:10px 0">
+      ${mb('wrong',s.wrong,'var(--bad)')}
+      ${mb('review',s.review,'var(--review)')}
+      ${mb('new',s.new,'var(--fg)')}
+      ${mb('correct',s.correct,'var(--good)')}
     </div>
-    <button class="btn-primary btn-block" id="start" ${s.total?'':'disabled'}>クイズを開始</button>
+    <button class="btn-primary btn-block" id="start" ${s.total?'':'disabled'}>おまかせで開始（不正解→要復習→未出題）</button>
     ${s.total?'':'<p class="small muted center" style="margin-top:10px">「取り込み」タブでMortalの検討URLを登録してください。</p>'}
   </div>`;
-  const b=$('#start'); if(b) b.addEventListener('click',async()=>{
-    b.disabled=true;b.textContent='出題中…';
-    const rec=await pickNext(null);
-    if(!rec){toast('問題がありません');b.disabled=false;b.textContent='クイズを開始';return;}
-    QUIZ={rec,reveal:false}; drawQuiz();
-  });
+  $$('.modebtn').forEach(b=>b.addEventListener('click',()=>startQuiz(b.dataset.m)));
+  const b=$('#start'); if(b) b.addEventListener('click',()=>startQuiz('auto'));
+}
+async function startQuiz(mode,src){
+  const rec=await pickNext(null,mode,src);
+  if(!rec){ toast(MODES[mode].label+'に出題できる問題がありません'); return; }
+  localStorage.setItem('mq.mode',mode);
+  QUIZ={rec,reveal:false,mode,src}; drawQuiz();
+}
+function drawDone(mode){
+  QUIZ=null;
+  view.innerHTML=`<div class="card center">
+    <h2>${esc(MODES[mode].label)}は終わりました 🎉</h2>
+    <p class="small muted">このリストに出題できる問題がなくなりました。</p>
+    <button class="btn-primary btn-block" id="back" style="margin-top:10px">リスト選択に戻る</button>
+  </div>`;
+  $('#back').addEventListener('click',renderQuiz);
 }
 function candListHTML(q){
   const cs=(q.candidates||[]).filter(c=>c.prob>=0.005).slice(0,6);
   if(!cs.length) return '';
   const max=cs[0].prob||1;
   return `<div style="margin-top:10px"><div class="small muted" style="margin-bottom:4px">Mortalの評価</div>`+
-    cs.map(c=>`<div class="cand"><div class="tw" style="width:26px">${tileSVG(c.tile)}</div>
-      <div style="width:64px">${esc(tileName(c.tile))}</div>
-      <div class="grow"><div class="bar" style="width:${Math.max(3,(c.prob/max)*100)}%;${c.tile===q.answer?'':'opacity:.5'}"></div></div>
+    cs.map((c,i)=>`<div class="cand">
+      ${c.tile?`<div class="tw" style="width:26px">${tileSVG(c.tile)}</div>`:''}
+      <div style="width:${c.tile?'70px':'104px'};font-size:13px">${esc(c.tile?tileName(c.tile):c.text)}</div>
+      <div class="grow"><div class="bar" style="width:${Math.max(3,(c.prob/max)*100)}%;${i===0?'':'opacity:.5'}"></div></div>
       <div class="small muted" style="width:52px;text-align:right">${(c.prob*100).toFixed(1)}%</div></div>`).join('')+`</div>`;
 }
 function drawQuiz(){
   const {rec,reveal}=QUIZ, q=rec.q, st=rec.st;
   view.innerHTML=`
-    <div class="row" style="margin-bottom:8px">${poolLabel(rec)}<span class="grow"></span>
+    <div class="row" style="margin-bottom:8px">${poolLabel(rec)}
+      <span class="chip">${esc((MODES[QUIZ.mode]||MODES.auto).label)}</span>
+      ${QUIZ.src?`<span class="chip">${esc(srcLabel(rec))}</span>`:''}<span class="grow"></span>
       <span class="small muted">◯${rec.correctCount||0} / ✕${rec.wrongCount||0}</span></div>
     <div class="boardwrap">${boardSVG(rec,reveal)}</div>
     <div id="ans"></div>
@@ -576,8 +684,8 @@ function drawQuiz(){
   } else {
     const sev=q.severity!=null? `（推奨との確率差 ${Math.round(q.severity*100)}pt）`:'';
     ans.innerHTML=`<div class="expl">
-        <b>Mortalの推奨：${esc(tileName(q.answer))}</b>${q.candidates&&q.candidates[0]?`（${(q.candidates[0].prob*100).toFixed(1)}%）`:''}<br>
-        実戦の打牌：${esc(tileName(q.actual))}${q.actualType==='reach'?'（リーチ宣言）':''}${sev}
+        <b>Mortalの推奨：${esc(q.answerText||tileName(q.answer))}</b>${q.candidates&&q.candidates[0]?`（${(q.candidates[0].prob*100).toFixed(1)}%）`:''}<br>
+        実戦：${esc(q.actualText||tileName(q.actual))}${sev}
         ${q.shanten!=null?`<br>この時点：${q.shanten===0?'テンパイ':q.shanten+'向聴'}${q.furiten?' / フリテン':''}`:''}
       </div>
       `;
@@ -604,13 +712,13 @@ function drawQuiz(){
   const nx=$('#next'), sk=$('#skip'), qt=$('#quit');
   if(nx) nx.addEventListener('click',next);
   if(sk) sk.addEventListener('click',next);
-  if(qt) qt.addEventListener('click',()=>{QUIZ=null;render();});
+  if(qt) qt.addEventListener('click',()=>{QUIZ=null;renderQuiz();});
 }
 async function next(){
-  const prev=QUIZ&&QUIZ.rec.id;
-  const rec=await pickNext(prev);
-  if(!rec){toast('問題がありません');QUIZ=null;render();return;}
-  QUIZ={rec,reveal:false}; drawQuiz();
+  const prev=QUIZ&&QUIZ.rec.id, mode=(QUIZ&&QUIZ.mode)||'auto', src=QUIZ&&QUIZ.src;
+  const rec=await pickNext(prev,mode,src);
+  if(!rec){ drawDone(mode); return; }
+  QUIZ={rec,reveal:false,mode,src}; drawQuiz();
 }
 async function mark(ok){
   const rec=QUIZ.rec;
@@ -847,27 +955,68 @@ async function runQueue(){
 
 /* ---------- 一覧 ---------- */
 let FILTER='all';
+function srcLabel(r){
+  if(!r) return '';
+  if(r.src==='image') return '画像から取り込み';
+  const id=r.reportId||'';
+  return '牌譜 '+(id.length>8? id.slice(0,8):id);
+}
 async function renderList(){
-  const all=(await dbAll()).sort((a,b)=>(b.createdAt-a.createdAt)||((a.seq||0)-(b.seq||0))), s=await stats();
-  const f={all:()=>true,new:r=>r.status==='new'||!r.status,wrong:r=>r.status==='wrong',
-    correct:r=>r.status==='correct',review:r=>!!r.review}[FILTER];
-  const items=all.filter(f);
+  const all=(await dbAll()).sort((a,b)=>(b.createdAt-a.createdAt)||((a.seq||0)-(b.seq||0)));
+  const s=await stats();
+  const F={all:()=>true,new:r=>r.status!=='wrong'&&r.status!=='correct',wrong:r=>r.status==='wrong',
+           correct:r=>r.status==='correct',review:r=>!!r.review};
+  const items=all.filter(F[FILTER]);
+  // 牌譜ごとにまとめる
+  const gAll=new Map(), gShow=new Map();
+  all.forEach(r=>{ const k=srcKey(r); if(!gAll.has(k)) gAll.set(k,[]); gAll.get(k).push(r); });
+  items.forEach(r=>{ const k=srcKey(r); if(!gShow.has(k)) gShow.set(k,[]); gShow.get(k).push(r); });
+  const mode = FILTER==='all'?'auto':FILTER;
+  const body=[...gShow.keys()].map(k=>{
+    const list=gShow.get(k), whole=gAll.get(k)||[], head=list[0];
+    const c={wrong:0,review:0,new:0,correct:0};
+    whole.forEach(r=>{ if(r.review)c.review++; if(r.status==='wrong')c.wrong++; else if(r.status==='correct')c.correct++; else c.new++; });
+    return `<div class="group">
+      <div class="ghead">
+        <div class="row">
+          <b>${esc(srcLabel(head))}</b>
+          <span class="small muted">${new Date(head.createdAt).toLocaleDateString('ja-JP')}</span>
+          <span class="grow"></span>
+          <span class="small muted">${list.length}問</span>
+        </div>
+        <div class="row small" style="gap:10px;margin-top:2px">
+          <span style="color:var(--bad)">不正解 ${c.wrong}</span>
+          <span style="color:var(--review)">要復習 ${c.review}</span>
+          <span>未出題 ${c.new}</span>
+          <span style="color:var(--good)">正解 ${c.correct}</span>
+        </div>
+        <button class="btn-ghost btn-sm btn-block" data-q="${esc(k)}" style="margin-top:8px">
+          この牌譜の「${esc(MODES[mode].label)}」を出題（${list.length}問）</button>
+      </div>
+      ${list.map(r=>`<div class="list-item" data-open="${esc(r.id)}">
+        <div class="row" style="gap:6px;margin-bottom:4px">
+          ${r.status==='wrong'?'<span class="badge b-wrong">不正解</span>':r.status==='correct'?'<span class="badge b-correct">正解</span>':'<span class="badge b-new">未出題</span>'}
+          ${r.review?'<span class="badge b-review">要復習</span>':''}
+          <span class="badge b-kind">${r.q.kind==='call'?'鳴き':r.q.kind==='riichi'?'リーチ':'何切る'}</span>
+          <span class="small muted">${esc(r.st.roundText||'')} ${r.st.junme?r.st.junme+'巡目':''}</span>
+        </div>
+        ${tilesHTML((r.st.drawn?r.st.hand.concat([r.st.drawn]):r.st.hand).slice(0,14))}
+      </div>`).join('')}
+    </div>`;
+  }).join('');
   view.innerHTML=`<div class="filters">
     <button data-f="all" class="${FILTER==='all'?'on':''}">全部 ${s.total}</button>
     <button data-f="wrong" class="${FILTER==='wrong'?'on':''}">不正解 ${s.wrong}</button>
     <button data-f="review" class="${FILTER==='review'?'on':''}">要復習 ${s.review}</button>
     <button data-f="new" class="${FILTER==='new'?'on':''}">未出題 ${s.new}</button>
     <button data-f="correct" class="${FILTER==='correct'?'on':''}">正解 ${s.correct}</button></div>
-    ${items.length?items.map(r=>`<div class="list-item" data-open="${esc(r.id)}">
-      <div class="row" style="gap:6px;margin-bottom:4px">
-        ${r.status==='wrong'?'<span class="badge b-wrong">不正解</span>':r.status==='correct'?'<span class="badge b-correct">正解</span>':'<span class="badge b-new">未出題</span>'}
-        ${r.review?'<span class="badge b-review">要復習</span>':''}
-        <span class="small muted">${esc(r.st.roundText||'')} ${r.st.junme?r.st.junme+'巡目':''}</span>
-        <span class="grow"></span><span class="small muted">${new Date(r.createdAt).toLocaleDateString('ja-JP')}</span></div>
-      ${tilesHTML((r.st.drawn?r.st.hand.concat([r.st.drawn]):r.st.hand).slice(0,14))}
-    </div>`).join(''):'<p class="muted center">該当なし</p>'}`;
+    ${body||'<p class="muted center">該当なし</p>'}`;
   $$('.filters button').forEach(b=>b.addEventListener('click',()=>{FILTER=b.dataset.f;renderList();}));
   $$('[data-open]').forEach(b=>b.addEventListener('click',()=>openDetail(b.dataset.open)));
+  $$('[data-q]').forEach(b=>b.addEventListener('click',()=>{
+    TAB='quiz'; $$('nav button').forEach(x=>x.classList.toggle('on',x.dataset.tab==='quiz'));
+    startQuiz(mode,b.dataset.q);
+  }));
 }
 async function openDetail(id){
   const r=await dbGet(id); if(!r) return;
