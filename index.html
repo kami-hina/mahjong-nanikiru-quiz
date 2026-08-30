@@ -236,6 +236,17 @@ const dbClear=async()=>{ MEM.forEach((v,k)=>DELETED.add(k)); MEM.clear(); DIRTY.
   try{ localStorage.removeItem(LS_DB); localStorage.removeItem(LS_STAT); }catch(e){} await flush(); };
 // 取り込み元URLの控え（データが消えてもワンタップで復元できる）
 const getSources=()=>lsGet(LS_SRC,[])||[];
+// 取り込んだ問題を保存する（既存なら学習状況を維持したまま中身だけ最新化）
+async function upsertProblem(p,cur){
+  if(!cur) return (await dbPut(applySavedStatus(p)), 'added');
+  const keepExpl=(cur.q&&cur.q.explanation)||'';
+  cur.st=p.st;
+  cur.q=Object.assign({},p.q,{explanation:keepExpl||p.q.explanation||''});
+  cur.srcUrl=p.srcUrl||cur.srcUrl; cur.reportId=p.reportId||cur.reportId;
+  cur.seq=(p.seq!=null?p.seq:cur.seq);
+  await dbPut(cur);
+  return 'updated';
+}
 // 取り込み直したレコードに、残っている学習状況を復元する
 function applySavedStatus(r){
   const t=(lsGet(LS_STAT,{})||{})[r.id];
@@ -818,20 +829,20 @@ function drawSources(){
   $('#reall').addEventListener('click',()=>restoreFrom(l));
 }
 async function restoreFrom(list){
-  const box=$('#imp'); let added=0, err=0;
+  const box=$('#imp'); let added=0, updated=0, err=0;
   for(let i=0;i<list.length;i++){
     const x=list[i];
     box.innerHTML=`<span class="spin"></span> 復元中… ${i+1}/${list.length}`;
     try{
       const rep=await fetchReport(reportUrlFrom(x.url),m=>{box.innerHTML=`<span class="spin"></span> ${esc(m)}（${i+1}/${list.length}）`;});
       const probs=extractProblems(rep,x.url,x.reportId);
-      const ex=new Set((await dbAll()).map(r=>r.id));
-      for(const pr of probs) if(!ex.has(pr.id)){ await dbPut(applySavedStatus(pr)); added++; }
+      const cur=new Map((await dbAll()).map(r=>[r.id,r]));
+      for(const pr of probs){ if(await upsertProblem(pr,cur.get(pr.id))==='added') added++; else updated++; }
     }catch(e){ err++; }
   }
   await flush();
-  box.innerHTML=`<div class="queue-item"><b>復元完了</b><br><span class="small">追加：${added}問${err?`／失敗：${err}件`:''}</span></div>`;
-  toast(added+'問を復元しました');
+  box.innerHTML=`<div class="queue-item"><b>復元完了</b><br><span class="small">追加：${added}問${updated?`／更新：${updated}問`:''}${err?`／失敗：${err}件`:''}</span></div>`;
+  toast((added+updated)+'問を復元しました');
 }
 async function doImport(){
   const box=$('#imp'), input=$('#url').value;
@@ -851,9 +862,9 @@ async function ingest(rep,srcUrl,reportId,box){
   let probs=extractProblems(rep,srcUrl,reportId);
   const total=probs.length;
   if(thr>0) probs=probs.filter(p=>p.q.severity==null||p.q.severity>=thr);
-  const existing=new Set((await dbAll()).map(r=>r.id));
-  const fresh=probs.filter(p=>!existing.has(p.id));
-  for(const p of fresh) await dbPut(applySavedStatus(p));
+  const cur=new Map((await dbAll()).map(r=>[r.id,r]));
+  let added=0, updated=0;
+  for(const p of probs){ if(await upsertProblem(p,cur.get(p.id))==='added') added++; else updated++; }
   await flush();
   askPersist();
   if(srcUrl) addSource({url:srcUrl, reportId, at:Date.now(), count:probs.length});
@@ -862,8 +873,8 @@ async function ingest(rep,srcUrl,reportId,box){
     <b>取り込み完了</b><br>
     <span class="small muted">検討局面 ${rv.total_reviewed} / 一致 ${rv.total_matches} / ミス ${rv.total_reviewed-rv.total_matches}</span><br>
     <span class="small">何切る問題として抽出：${total}件${thr>0?`（うち条件該当 ${probs.length}件）`:''}<br>
-    新規保存：<b>${fresh.length}件</b>${probs.length-fresh.length>0?`（既に取り込み済み ${probs.length-fresh.length}件）`:''}</span>
-    ${fresh.length?`<button class="btn-primary btn-block btn-sm" id="tostart" style="margin-top:8px">クイズを開始する</button>`:''}
+    新規保存：<b>${added}件</b>${updated?`／更新：${updated}件（学習状況は維持）`:''}</span>
+    <button class="btn-primary btn-block btn-sm" id="tostart" style="margin-top:8px">クイズを開始する</button>
   </div>`;
   const b=$('#tostart'); if(b) b.addEventListener('click',()=>{QUIZ=null;TAB='quiz';$$('nav button').forEach(x=>x.classList.toggle('on',x.dataset.tab==='quiz'));render();});
 }
