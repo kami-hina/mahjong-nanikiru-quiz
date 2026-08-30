@@ -90,6 +90,7 @@ img.shot{width:100%;border-radius:10px;border:1px solid var(--line)}
 </nav>
 <script>
 "use strict";
+const APP_VERSION='2026-08-30d';
 /* ========================= 小物 ========================= */
 const $=(s,r)=>(r||document).querySelector(s), $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1105,8 +1106,15 @@ async function renderSettings(){
     </select>
   </div>
   <button class="btn-primary btn-block" id="save">設定を保存</button>
+  <div class="card">
+    <h2>アプリの更新</h2>
+    <p class="small muted">バージョン <b>${APP_VERSION}</b>。スマホのキャッシュで古い画面のままになることがあります。うまく更新されないときはこちら。</p>
+    <button class="btn-ghost btn-block btn-sm" id="reloadapp">最新版に更新する</button>
+  </div>
   <p class="small muted center" style="margin-top:10px">麻雀 何切るクイズ / データは端末内のみ</p>`;
   $('#model').value=CFG.model;
+  $('#reloadapp').addEventListener('click',async()=>{ await flush();
+    location.replace(location.pathname+'?v='+Date.now()); });
   $('#persist').addEventListener('click',async()=>{ await askPersist();
     toast(DIAG.persisted===true?'永続ストレージが許可されました':'この環境では許可されませんでした（ホーム画面に追加すると通りやすくなります）',4000);
     renderSettings(); });
