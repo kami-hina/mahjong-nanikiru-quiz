@@ -46,6 +46,7 @@ nav button.on{color:var(--accent)}
 .b-wrong{background:#6d2020;color:#ffd7d7}.b-review{background:#7a4a12;color:#ffe3c0}
 .boardwrap{background:#0a2b2f;border:1px solid var(--line);border-radius:14px;padding:6px}
 svg.board{display:block;width:100%;height:auto}
+.startpane{display:flex;flex-direction:column;justify-content:center;min-height:calc(100vh - 104px - var(--safe-b));min-height:calc(100dvh - 104px - var(--safe-b))}
 .modes{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .modebtn{background:#0a262a;border:1px solid var(--line);border-radius:12px;padding:12px 6px;text-align:center;color:var(--fg)}
 .modebtn .n{display:block;font-size:22px;font-weight:800;line-height:1.1}
@@ -90,7 +91,7 @@ img.shot{width:100%;border-radius:10px;border:1px solid var(--line)}
 </nav>
 <script>
 "use strict";
-const APP_VERSION='2026-08-30d';
+const APP_VERSION='2026-08-30e';
 /* ========================= 小物 ========================= */
 const $=(s,r)=>(r||document).querySelector(s), $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -634,20 +635,18 @@ async function renderQuiz(){
   const s=await stats();
   const mb=(m,n,color)=>`<button class="modebtn" data-m="${m}" ${n?'':'disabled'}>
       <span class="n" style="color:${color}">${n}</span><span class="l">${MODES[m].label}</span></button>`;
-  view.innerHTML=`<div class="card">
-    <h2>何切るクイズ</h2>
-    <p class="small muted">解きたいリストを選んでください。選んだリストの中だけを出題します。</p>
-    <div class="modes" style="margin:10px 0">
+  view.innerHTML=`<div class="startpane"><div class="card" style="margin:0">
+    <h2 class="center">何切るクイズ</h2>
+    <p class="small muted center">解きたいリストを選んでください。<br>選んだリストの中だけを出題します。</p>
+    <div class="modes" style="margin-top:12px">
       ${mb('wrong',s.wrong,'var(--bad)')}
       ${mb('review',s.review,'var(--review)')}
       ${mb('new',s.new,'var(--fg)')}
       ${mb('correct',s.correct,'var(--good)')}
     </div>
-    <button class="btn-primary btn-block" id="start" ${s.total?'':'disabled'}>おまかせで開始（不正解→要復習→未出題）</button>
-    ${s.total?'':'<p class="small muted center" style="margin-top:10px">「取り込み」タブでMortalの検討URLを登録してください。</p>'}
-  </div>`;
+    ${s.total?'':'<p class="small muted center" style="margin-top:12px">「取り込み」タブでMortalの検討URLを登録してください。</p>'}
+  </div></div>`;
   $$('.modebtn').forEach(b=>b.addEventListener('click',()=>startQuiz(b.dataset.m)));
-  const b=$('#start'); if(b) b.addEventListener('click',()=>startQuiz('auto'));
 }
 async function startQuiz(mode,src){
   const rec=await pickNext(null,mode,src);
