@@ -96,7 +96,7 @@ img.shot{width:100%;border-radius:10px;border:1px solid var(--line)}
 </nav>
 <script>
 "use strict";
-const APP_VERSION='2026-08-31a';
+const APP_VERSION='2026-08-31b';
 /* ========================= 小物 ========================= */
 const $=(s,r)=>(r||document).querySelector(s), $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -670,9 +670,12 @@ async function srcGroups(){
   const m=new Map();
   (await uniqRecs()).forEach(r=>{ const k=srcKey(r); if(!m.has(k)) m.set(k,[]); m.get(k).push(r); });
   return [...m.entries()].map(([k,list])=>({key:k,list,label:srcLabel(list[0]),
-      at:Math.max.apply(null,list.map(r=>r.createdAt||0)), c:countsOf(list)}))
+      at:uploadedAt(list), c:countsOf(list)}))
     .sort((a,b)=>b.at-a.at);
 }
+// アップロードした日時（最初に取り込んだ時刻。再取り込みしても変わらない）
+const uploadedAt=list=>Math.min.apply(null,list.map(r=>r.createdAt||Date.now()));
+const fmtDT=t=>t?new Date(t).toLocaleString('ja-JP',{year:'numeric',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
 
 /* ---------- クイズ ---------- */
 let QUIZ=null; // {rec, reveal, mode, src}
@@ -758,8 +761,8 @@ async function renderQuiz(){
     <p class="small muted">アップロードした牌譜を選ぶと、その牌譜の問題だけを東1局1巡目から順番に出題します。</p>
     <div style="margin-top:10px">${groups.map(g=>`<button class="srcbtn" data-s="${esc(g.key)}">
       <div class="row"><b>${esc(g.label)}</b>
-        <span class="small muted">${g.at?new Date(g.at).toLocaleDateString('ja-JP'):''}</span>
         <span class="grow"></span><span class="small muted">${g.c.total}問 ›</span></div>
+      <div class="small muted" style="margin-top:2px">アップロード ${fmtDT(g.at)}</div>
       ${countsHTML(g.c)}</button>`).join('')}</div>
   </div>`:''}
   </div>`;
@@ -774,7 +777,7 @@ async function renderQuizSrc(){
   view.innerHTML=`<button class="btn-ghost btn-sm" id="back">← 牌譜の選択に戻る</button>
   <div class="card" style="margin-top:10px">
     <h2 class="center">${esc(g.label)}</h2>
-    <p class="small muted center">この牌譜の${s.total}問だけを、東1局1巡目から順番に出題します。</p>
+    <p class="small muted center">アップロード ${fmtDT(g.at)}<br>この牌譜の${s.total}問だけを、東1局1巡目から順番に出題します。</p>
     ${countsHTML(s,1)}
     <button class="btn-primary btn-block" data-m="auto" style="margin-top:12px">最初から順番に全部解く（${s.total}問）</button>
     <p class="small muted center" style="margin:10px 0 6px">リストをしぼる</p>
@@ -1204,10 +1207,10 @@ async function renderList(){
       <div class="ghead">
         <div class="row">
           <b>${esc(srcLabel(head))}</b>
-          <span class="small muted">${new Date(head.createdAt).toLocaleDateString('ja-JP')}</span>
           <span class="grow"></span>
           <span class="small muted">${list.length}問</span>
         </div>
+        <div class="small muted">アップロード ${fmtDT(uploadedAt(whole))}</div>
         <div class="row small" style="gap:10px;margin-top:2px">
           <span style="color:var(--bad)">不正解 ${c.wrong}</span>
           <span style="color:var(--review)">要復習 ${c.review}</span>
