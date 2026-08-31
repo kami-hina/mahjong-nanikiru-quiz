@@ -51,6 +51,9 @@ svg.board{display:block;width:100%;height:auto}
 .modebtn{background:#0a262a;border:1px solid var(--line);border-radius:12px;padding:12px 6px;text-align:center;color:var(--fg)}
 .modebtn .n{display:block;font-size:22px;font-weight:800;line-height:1.1}
 .modebtn .l{font-size:12px;color:var(--muted)}
+.modebtn:disabled{opacity:.4}
+.srcbtn{display:block;width:100%;text-align:left;background:#0a262a;border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px;color:var(--fg)}
+.srcbtn .cs{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;margin-top:3px}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center}
 .stats div{background:#0a262a;border:1px solid var(--line);border-radius:10px;padding:8px 2px}
 .stats .n{font-size:19px;font-weight:800;display:block}.stats .l{font-size:10px;color:var(--muted)}
@@ -93,7 +96,7 @@ img.shot{width:100%;border-radius:10px;border:1px solid var(--line)}
 </nav>
 <script>
 "use strict";
-const APP_VERSION='2026-08-30f';
+const APP_VERSION='2026-08-31a';
 /* ========================= 小物 ========================= */
 const $=(s,r)=>(r||document).querySelector(s), $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -250,6 +253,68 @@ async function upsertProblem(p,cur){
   cur.seq=(p.seq!=null?p.seq:cur.seq);
   await dbPut(cur);
   return 'updated';
+}
+/* ---- 「全く同じ局面」の重複を作らない ---- */
+// 見えている状況と答えが完全に一致する問題を同一とみなすための署名
+const SIGC=new Map();
+function sigText(r){
+  const st=r.st||{}, q=r.q||{}, j=v=>JSON.stringify(v==null?null:v);
+  return [ q.kind||'', st.roundText||'', st.honba|0, st.oyaRel|0, st.seatText||'',
+    st.junme|0, (st.left!=null?st.left:''), j(st.dora), j(st.scores), j(st.riichi),
+    j(st.hand), st.drawn||'', j(st.rivers), j(st.fuuros),
+    (st.callRel!=null?st.callRel:''), st.callTile||'',
+    q.answer||'', q.answerText||'', q.answerType||'', j(q.answerConsumed),
+    q.actual||'', q.actualText||'', q.actualType||'', (r.image?'img':'')
+  ].join('|');
+}
+function sigOf(r){
+  if(!r.updatedAt) return sigHash(sigText(r));
+  const c=SIGC.get(r.id); if(c&&c[0]===r.updatedAt) return c[1];
+  const h=sigHash(sigText(r)); SIGC.set(r.id,[r.updatedAt,h]); return h;
+}
+function sigHash(t){
+  let a=0x811c9dc5, b=0x01000193|0;
+  for(let i=0;i<t.length;i++){ const c=t.charCodeAt(i);
+    a=Math.imul(a^c,16777619)>>>0; b=(Math.imul(b+c,2654435761)^(b>>>7))>>>0; }
+  return t.length.toString(36)+'-'+a.toString(36)+'-'+b.toString(36);
+}
+// 重複が出たときに残すべき度合い（学習が進んでいるものを優先）
+const sigPrio=r=>((r.correctCount||0)+(r.wrongCount||0))*4+(r.review?2:0)+((r.status&&r.status!=='new')?1:0);
+// 既存データの署名インデックス（署名 → レコード）
+async function sigIndex(){
+  const m=new Map();
+  for(const r of await dbAll()){ const s=sigOf(r), p=m.get(s);
+    if(!p||sigPrio(r)>sigPrio(p)||(sigPrio(r)===sigPrio(p)&&(r.createdAt||0)<(p.createdAt||0))) m.set(s,r); }
+  return m;
+}
+// 全く同じ局面が2つ以上あるときは1つだけを使う（学習が進んでいる方を残す）
+async function uniqRecs(){ return [...(await sigIndex()).values()]; }
+// 同じ局面が重複しないようにまとめて保存する
+async function saveProblems(probs){
+  const cur=new Map((await dbAll()).map(r=>[r.id,r]));
+  const sig=await sigIndex();
+  let added=0, updated=0, dup=0;
+  for(const p of probs){
+    const ex=cur.get(p.id), s=sigOf(p);
+    const hit=sig.get(s);
+    if(!ex&&hit){ dup++; continue; }          // 全く同じ局面がすでにある → 追加しない
+    if(await upsertProblem(p,ex)==='added') added++; else updated++;
+    const saved=await dbGet(p.id); if(saved){ cur.set(p.id,saved); sig.set(sigOf(saved),saved); }
+  }
+  return {added,updated,dup};
+}
+// 保存済みデータから重複を取り除く（学習が進んでいる方を残す）
+async function dedupeStored(){
+  const keep=new Map(), drop=[];
+  for(const r of await dbAll()){
+    const s=sigOf(r), p=keep.get(s);
+    if(!p){ keep.set(s,r); continue; }
+    const win=(sigPrio(r)>sigPrio(p)||(sigPrio(r)===sigPrio(p)&&(r.createdAt||0)<(p.createdAt||0)))?r:p;
+    drop.push(win===r?p:r); keep.set(s,win);
+  }
+  for(const r of drop) await dbDel(r.id);
+  if(drop.length) await flush();
+  return drop.length;
 }
 // 取り込み直したレコードに、残っている学習状況を復元する
 function applySavedStatus(r){
@@ -460,7 +525,11 @@ function extractProblems(rep,srcUrl,reportId){
       });
     });
   });
-  return probs;
+  // 同じ牌譜の中に全く同じ局面があれば1つだけ残す
+  const seen=new Set(), out=[];
+  for(const p of probs){ const g=sigOf(p); if(seen.has(g)) continue; seen.add(g); out.push(p); }
+  out.forEach((p,i)=>{ p.seq=i; });
+  return out;
 }
 
 /* ========================= 卓図（マスク／答え表示） ========================= */
@@ -593,11 +662,21 @@ let TAB='quiz'; const view=$('#view');
 $$('nav button').forEach(b=>b.addEventListener('click',()=>{TAB=b.dataset.tab;$$('nav button').forEach(x=>x.classList.toggle('on',x===b));render();}));
 function render(){ window.scrollTo(0,0);
   if(TAB==='quiz') renderQuiz(); else if(TAB==='add') renderAdd(); else if(TAB==='list') renderList(); else renderSettings(); }
-async function stats(){ const a=await dbAll(); const s={total:a.length,new:0,wrong:0,correct:0,review:0};
+function countsOf(a){ const s={total:a.length,new:0,wrong:0,correct:0,review:0};
   a.forEach(r=>{ if(r.review)s.review++; if(r.status==='wrong')s.wrong++; else if(r.status==='correct')s.correct++; else s.new++; }); return s; }
+async function stats(){ return countsOf(await uniqRecs()); }
+// 牌譜（アップロード単位）ごとにまとめる
+async function srcGroups(){
+  const m=new Map();
+  (await uniqRecs()).forEach(r=>{ const k=srcKey(r); if(!m.has(k)) m.set(k,[]); m.get(k).push(r); });
+  return [...m.entries()].map(([k,list])=>({key:k,list,label:srcLabel(list[0]),
+      at:Math.max.apply(null,list.map(r=>r.createdAt||0)), c:countsOf(list)}))
+    .sort((a,b)=>b.at-a.at);
+}
 
 /* ---------- クイズ ---------- */
-let QUIZ=null; // {rec, reveal, mode}
+let QUIZ=null; // {rec, reveal, mode, src}
+let QSRC=null; // 選択中の牌譜（アップロード単位）
 const MODES={
   auto:  {label:'おまかせ', desc:'不正解 → 要復習 → 未出題 の順', f:null},
   wrong: {label:'不正解だけ', desc:'間違えた問題だけを出題', f:r=>r.status==='wrong'},
@@ -613,11 +692,29 @@ function pickFrom(pool,prevId){
   return head[Math.floor(Math.random()*head.length)];
 }
 const srcKey=r=>r.reportId||('image:'+(r.src||''));
+// 牌譜単位は東1局1巡目から順番に（seq は取り込み時に局順・巡目順で採番される）
+let PROG=null; // 牌譜単位のときの進捗 {pos,total}
+const seqOf=r=>(r.seq!=null?r.seq:0);
+const bySeq=(a,b)=>(seqOf(a)-seqOf(b))||String(a.id).localeCompare(String(b.id));
+function pickSeq(pool,prev){
+  const c=pool.slice().sort(bySeq);
+  if(!c.length) return null;
+  if(!prev) return c[0];
+  return c.find(r=>r.id!==prev.id&&bySeq(r,prev)>0)||null;   // 最後まで行ったら終了
+}
 async function pickNext(prevId,mode,src){
-  let all=await dbAll();
+  let all=await uniqRecs();
   if(src) all=all.filter(r=>srcKey(r)===src);
   if(!all.length) return null;
   const m=MODES[mode]||MODES.auto;
+  if(src){                                           // 牌譜単位は順番どおりに出題
+    const prev=prevId? (all.find(r=>r.id===prevId)||null):null;
+    const pool=(m.f? all.filter(m.f):all).slice().sort(bySeq);
+    const rec=pickSeq(pool,prev);
+    PROG=rec? {pos:pool.findIndex(r=>r.id===rec.id)+1, total:pool.length}:null;
+    return rec;
+  }
+  PROG=null;
   if(m.f) return pickFrom(all.filter(m.f),prevId);   // 指定リストの中だけで出題（尽きたら null）
   const pools=[ all.filter(r=>r.status==='wrong'),
                 all.filter(r=>r.review&&r.status!=='wrong'),
@@ -632,38 +729,77 @@ function poolLabel(r){
   if(r.status==='correct') return '<span class="badge b-correct">復習（正解済み）</span>';
   return '<span class="badge b-new">未出題から</span>';
 }
+const modeBtnHTML=(m,n,color)=>`<button class="modebtn" data-m="${m}" ${n?'':'disabled'}>
+    <span class="n" style="color:${color}">${n}</span><span class="l">${MODES[m].label}</span></button>`;
+const modeGridHTML=s=>`<div class="modes">
+    ${modeBtnHTML('wrong',s.wrong,'var(--bad)')}
+    ${modeBtnHTML('review',s.review,'var(--review)')}
+    ${modeBtnHTML('new',s.new,'var(--fg)')}
+    ${modeBtnHTML('correct',s.correct,'var(--good)')}
+  </div>`;
+const countsHTML=(c,center)=>`<div class="cs"${center?' style="justify-content:center"':''}>
+    <span style="color:var(--bad)">不正解 ${c.wrong}</span>
+    <span style="color:var(--review)">要復習 ${c.review}</span>
+    <span class="muted">未出題 ${c.new}</span>
+    <span style="color:var(--good)">正解 ${c.correct}</span></div>`;
 async function renderQuiz(){
   if(QUIZ) return drawQuiz();
+  if(QSRC) return renderQuizSrc();
   const s=await stats();
-  const mb=(m,n,color)=>`<button class="modebtn" data-m="${m}" ${n?'':'disabled'}>
-      <span class="n" style="color:${color}">${n}</span><span class="l">${MODES[m].label}</span></button>`;
-  view.innerHTML=`<div class="startpane"><div class="card" style="margin:0">
+  const groups=await srcGroups();
+  view.innerHTML=`<div class="${groups.length>1?'':'startpane'}"><div class="card" style="margin:0">
     <h2 class="center">何切るクイズ</h2>
     <p class="small muted center">解きたいリストを選んでください。<br>選んだリストの中だけを出題します。</p>
-    <div class="modes" style="margin-top:12px">
-      ${mb('wrong',s.wrong,'var(--bad)')}
-      ${mb('review',s.review,'var(--review)')}
-      ${mb('new',s.new,'var(--fg)')}
-      ${mb('correct',s.correct,'var(--good)')}
-    </div>
+    <div style="margin-top:12px">${modeGridHTML(s)}</div>
     ${s.total?'':'<p class="small muted center" style="margin-top:12px">「取り込み」タブでMortalの検討URLを登録してください。</p>'}
-  </div></div>`;
+  </div>
+  ${groups.length?`<div class="card" style="margin:12px 0 0">
+    <h2 style="font-size:16px">牌譜ごとに解く</h2>
+    <p class="small muted">アップロードした牌譜を選ぶと、その牌譜の問題だけを東1局1巡目から順番に出題します。</p>
+    <div style="margin-top:10px">${groups.map(g=>`<button class="srcbtn" data-s="${esc(g.key)}">
+      <div class="row"><b>${esc(g.label)}</b>
+        <span class="small muted">${g.at?new Date(g.at).toLocaleDateString('ja-JP'):''}</span>
+        <span class="grow"></span><span class="small muted">${g.c.total}問 ›</span></div>
+      ${countsHTML(g.c)}</button>`).join('')}</div>
+  </div>`:''}
+  </div>`;
   $$('.modebtn').forEach(b=>b.addEventListener('click',()=>startQuiz(b.dataset.m)));
+  $$('.srcbtn').forEach(b=>b.addEventListener('click',()=>{QSRC=b.dataset.s;renderQuiz();}));
+}
+// 牌譜1つ分の中でリストを選ぶ画面
+async function renderQuizSrc(){
+  const g=(await srcGroups()).find(x=>x.key===QSRC);
+  if(!g){ QSRC=null; return renderQuiz(); }
+  const s=g.c;
+  view.innerHTML=`<button class="btn-ghost btn-sm" id="back">← 牌譜の選択に戻る</button>
+  <div class="card" style="margin-top:10px">
+    <h2 class="center">${esc(g.label)}</h2>
+    <p class="small muted center">この牌譜の${s.total}問だけを、東1局1巡目から順番に出題します。</p>
+    ${countsHTML(s,1)}
+    <button class="btn-primary btn-block" data-m="auto" style="margin-top:12px">最初から順番に全部解く（${s.total}問）</button>
+    <p class="small muted center" style="margin:10px 0 6px">リストをしぼる</p>
+    ${modeGridHTML(s)}
+  </div>`;
+  $('#back').addEventListener('click',()=>{QSRC=null;renderQuiz();});
+  $$('[data-m]').forEach(b=>b.addEventListener('click',()=>startQuiz(b.dataset.m,QSRC)));
 }
 async function startQuiz(mode,src){
   const rec=await pickNext(null,mode,src);
   if(!rec){ toast(MODES[mode].label+'に出題できる問題がありません'); return; }
   localStorage.setItem('mq.mode',mode);
-  QUIZ={rec,reveal:false,mode,src}; drawQuiz();
+  QSRC=src||null;
+  QUIZ={rec,reveal:false,mode,src,pos:PROG&&PROG.pos,total:PROG&&PROG.total}; drawQuiz();
 }
 function drawDone(mode){
   QUIZ=null;
   view.innerHTML=`<div class="card center">
     <h2>${esc(MODES[mode].label)}は終わりました 🎉</h2>
-    <p class="small muted">このリストに出題できる問題がなくなりました。</p>
-    <button class="btn-primary btn-block" id="back" style="margin-top:10px">リスト選択に戻る</button>
+    <p class="small muted">${QSRC?'この牌譜の最後の問題まで解き終わりました。':'このリストに出題できる問題がなくなりました。'}</p>
+    <button class="btn-primary btn-block" id="back" style="margin-top:10px">${QSRC?'この牌譜のリスト選択に戻る':'リスト選択に戻る'}</button>
+    ${QSRC?'<button class="btn-ghost btn-block btn-sm" id="allsrc" style="margin-top:8px">ほかの牌譜を選ぶ</button>':''}
   </div>`;
   $('#back').addEventListener('click',renderQuiz);
+  const a=$('#allsrc'); if(a) a.addEventListener('click',()=>{QSRC=null;renderQuiz();});
 }
 function candListHTML(q){
   const cs=(q.candidates||[]).filter(c=>c.prob>=0.005).slice(0,6);
@@ -681,7 +817,7 @@ function drawQuiz(){
   view.innerHTML=`
     <div class="row" style="margin-bottom:8px">${poolLabel(rec)}
       <span class="chip">${esc((MODES[QUIZ.mode]||MODES.auto).label)}</span>
-      ${QUIZ.src?`<span class="chip">${esc(srcLabel(rec))}</span>`:''}<span class="grow"></span>
+      ${QUIZ.src?`<span class="chip">${esc(srcLabel(rec))} ${QUIZ.pos?QUIZ.pos+'/'+QUIZ.total:''}</span>`:''}<span class="grow"></span>
       <span class="small muted">◯${rec.correctCount||0} / ✕${rec.wrongCount||0}</span></div>
     <div class="boardwrap">${boardSVG(rec,reveal)}</div>
     <div id="ans"></div>
@@ -731,7 +867,7 @@ async function next(){
   const prev=QUIZ&&QUIZ.rec.id, mode=(QUIZ&&QUIZ.mode)||'auto', src=QUIZ&&QUIZ.src;
   const rec=await pickNext(prev,mode,src);
   if(!rec){ drawDone(mode); return; }
-  QUIZ={rec,reveal:false,mode,src}; drawQuiz();
+  QUIZ={rec,reveal:false,mode,src,pos:PROG&&PROG.pos,total:PROG&&PROG.total}; drawQuiz();
 }
 async function mark(ok){
   const rec=QUIZ.rec;
@@ -774,8 +910,8 @@ function renderAdd(){
   view.innerHTML=`
   <div class="card">
     <h2>Mortalの検討URLから取り込む</h2>
-    <p class="small muted">mjai.ekyu.moe の検討ページのURLを貼り付けてください。AIの推奨と食い違った局面（error）だけを抽出して問題にします。<b>APIトークンは使いません（無料）</b>。</p>
-    <input id="url" placeholder="https://mjai.ekyu.moe/killerducky/?data=/report/xxxx.json" value="${esc(CFG.lastUrl)}">
+    <p class="small muted">mjai.ekyu.moe の検討ページのURLを貼り付けてください。AIの推奨と食い違った局面（error）だけを抽出して問題にします。<b>APIトークンは使いません（無料）</b>。<br><b>1行に1つずつ書けば、何件でもまとめて取り込めます。</b></p>
+    <textarea id="url" rows="4" placeholder="https://mjai.ekyu.moe/killerducky/?data=/report/xxxx.json&#10;https://mjai.ekyu.moe/killerducky/?data=/report/yyyy.json">${esc(CFG.lastUrl)}</textarea>
     <label>取り込む範囲</label>
     <select id="sev">
       <option value="0">すべてのミス</option>
@@ -831,19 +967,19 @@ function drawSources(){
   $('#reall').addEventListener('click',()=>restoreFrom(l));
 }
 async function restoreFrom(list){
-  const box=$('#imp'); let added=0, updated=0, err=0;
+  const box=$('#imp'); let added=0, updated=0, dup=0, err=0;
   for(let i=0;i<list.length;i++){
     const x=list[i];
     box.innerHTML=`<span class="spin"></span> 復元中… ${i+1}/${list.length}`;
     try{
       const rep=await fetchReport(reportUrlFrom(x.url),m=>{box.innerHTML=`<span class="spin"></span> ${esc(m)}（${i+1}/${list.length}）`;});
       const probs=extractProblems(rep,x.url,x.reportId);
-      const cur=new Map((await dbAll()).map(r=>[r.id,r]));
-      for(const pr of probs){ if(await upsertProblem(pr,cur.get(pr.id))==='added') added++; else updated++; }
+      const r2=await saveProblems(probs);
+      added+=r2.added; updated+=r2.updated; dup+=r2.dup;
     }catch(e){ err++; }
   }
   await flush();
-  box.innerHTML=`<div class="queue-item"><b>復元完了</b><br><span class="small">追加：${added}問${updated?`／更新：${updated}問`:''}${err?`／失敗：${err}件`:''}</span></div>`;
+  box.innerHTML=`<div class="queue-item"><b>復元完了</b><br><span class="small">追加：${added}問${updated?`／更新：${updated}問`:''}${dup?`／重複のためスキップ：${dup}問`:''}${err?`／失敗：${err}件`:''}</span></div>`;
   toast((added+updated)+'問を復元しました');
 }
 // この牌譜がすでに取り込み済みかを調べる
@@ -863,12 +999,54 @@ function showDup(box,dup,retry){
   </div>`;
   $('#force').addEventListener('click',retry);
 }
+// 複数URLをまとめて取り込む
+async function bulkImport(urls,force){
+  const box=$('#imp');
+  const thr=parseFloat(($('#sev')&&$('#sev').value)||'0');
+  const res={ok:0,dup:0,fail:0,added:0,updated:0,skip:0,notes:[]};
+  for(let i=0;i<urls.length;i++){
+    const raw=urls[i];
+    box.innerHTML=`<span class="spin"></span> 取り込み中… ${i+1}/${urls.length}`;
+    let url,id;
+    try{ url=reportUrlFrom(raw); id=(url.match(/([0-9a-f]{6,})\.json/i)||[,'rep'])[1]; }
+    catch(e){ res.fail++; res.notes.push(['×',raw,e.message]); continue; }
+    if(!force){
+      const dup=await alreadyImported(id);
+      if(dup){ res.dup++; res.notes.push(['済',raw,'すでにアップロード済み']); continue; }
+    }
+    try{
+      const rp=await fetchReport(url,m=>{box.innerHTML=`<span class="spin"></span> ${esc(m)}（${i+1}/${urls.length}）`;});
+      let probs=extractProblems(rp,raw,id);
+      if(thr>0) probs=probs.filter(x=>x.q.severity==null||x.q.severity>=thr);
+      const r2=await saveProblems(probs);
+      addSource({url:raw,reportId:id,at:Date.now(),count:probs.length});
+      res.ok++; res.added+=r2.added; res.updated+=r2.updated; res.skip+=r2.dup;
+      res.notes.push(['◯',raw,probs.length+'問'+(r2.dup?`（うち重複 ${r2.dup}問はスキップ）`:'')]);
+    }catch(e){ res.fail++; res.notes.push(['×',raw,e.message]); }
+  }
+  await flush(); askPersist();
+  const short=u=>{ const m=u.match(/([0-9a-z]{6,})\.json/i); return m? m[1] : u.slice(0,40); };
+  box.innerHTML=`<div class="queue-item">
+    <b>まとめて取り込み完了</b><br>
+    <span class="small">取り込み：<b>${res.ok}件</b>（新規 ${res.added}問${res.updated?'／更新 '+res.updated+'問':''}）
+      ${res.skip?`／重複スキップ ${res.skip}問`:''}${res.dup?`／すでにアップロード済み：${res.dup}件`:''}${res.fail?`／失敗：${res.fail}件`:''}</span>
+    <div class="small muted" style="margin-top:8px">
+      ${res.notes.map(n=>`<div>${n[0]} ${esc(short(n[1]))} — ${esc(n[2])}</div>`).join('')}
+    </div>
+    ${res.added?`<button class="btn-primary btn-block btn-sm" id="tostart" style="margin-top:8px">クイズを開始する</button>`:''}
+  </div>`;
+  drawSources();
+  const b=$('#tostart'); if(b) b.addEventListener('click',()=>{QUIZ=null;TAB='quiz';$$('nav button').forEach(x=>x.classList.toggle('on',x.dataset.tab==='quiz'));render();});
+}
 async function doImport(force){
   const box=$('#imp'), input=$('#url').value;
   box.innerHTML='<span class="spin"></span> 準備中…';
-  let url;
-  try{ url=reportUrlFrom(input); }catch(e){ box.innerHTML=`<span style="color:var(--bad)">${esc(e.message)}</span>`; return; }
   CFG.lastUrl=input.trim();
+  const lines=input.split(/[\s,]+/).map(x=>x.trim()).filter(Boolean);
+  if(!lines.length){ box.innerHTML=`<span style="color:var(--bad)">URLを入力してください</span>`; return; }
+  if(lines.length>1) return bulkImport(lines,force);
+  let url;
+  try{ url=reportUrlFrom(lines[0]); }catch(e){ box.innerHTML=`<span style="color:var(--bad)">${esc(e.message)}</span>`; return; }
   const id=(url.match(/([0-9a-f]{6,})\.json/i)||[,'rep'])[1];
   if(!force){
     const dup=await alreadyImported(id);
@@ -876,7 +1054,7 @@ async function doImport(force){
   }
   try{
     const rep=await fetchReport(url,m=>{box.innerHTML=`<span class="spin"></span> ${esc(m)}`;});
-    await ingest(rep,input.trim(),id,box,true);
+    await ingest(rep,lines[0],id,box,true);
   }catch(e){ box.innerHTML=`<span style="color:var(--bad)">${esc(e.message)}</span>`; }
 }
 async function ingest(rep,srcUrl,reportId,box,force){
@@ -889,9 +1067,7 @@ async function ingest(rep,srcUrl,reportId,box,force){
   let probs=extractProblems(rep,srcUrl,reportId);
   const total=probs.length;
   if(thr>0) probs=probs.filter(p=>p.q.severity==null||p.q.severity>=thr);
-  const cur=new Map((await dbAll()).map(r=>[r.id,r]));
-  let added=0, updated=0;
-  for(const p of probs){ if(await upsertProblem(p,cur.get(p.id))==='added') added++; else updated++; }
+  const {added,updated,dup}=await saveProblems(probs);
   await flush();
   askPersist();
   if(srcUrl) addSource({url:srcUrl, reportId, at:Date.now(), count:probs.length});
@@ -900,7 +1076,7 @@ async function ingest(rep,srcUrl,reportId,box,force){
     <b>取り込み完了</b><br>
     <span class="small muted">検討局面 ${rv.total_reviewed} / 一致 ${rv.total_matches} / ミス ${rv.total_reviewed-rv.total_matches}</span><br>
     <span class="small">何切る問題として抽出：${total}件${thr>0?`（うち条件該当 ${probs.length}件）`:''}<br>
-    新規保存：<b>${added}件</b>${updated?`／更新：${updated}件（学習状況は維持）`:''}</span>
+    新規保存：<b>${added}件</b>${updated?`／更新：${updated}件（学習状況は維持）`:''}${dup?`／全く同じ局面のためスキップ：${dup}件`:''}</span>
     <button class="btn-primary btn-block btn-sm" id="tostart" style="margin-top:8px">クイズを開始する</button>
   </div>`;
   const b=$('#tostart'); if(b) b.addEventListener('click',()=>{QUIZ=null;TAB='quiz';$$('nav button').forEach(x=>x.classList.toggle('on',x.dataset.tab==='quiz'));render();});
@@ -972,8 +1148,10 @@ function drawQueue(){
   }).join('');
   $$('[data-save]',box).forEach(b=>b.addEventListener('click',async()=>{
     const q=QUEUE.find(x=>x.id===b.dataset.save); if(!q) return;
-    await dbPut({id:uid(),createdAt:Date.now(),src:'image',srcUrl:'',image:q.result.image,
-      st:q.result.st,q:q.result.q,status:'new',review:false,attempts:0,correctCount:0,wrongCount:0,lastAnsweredAt:null});
+    const rec={id:uid(),createdAt:Date.now(),src:'image',srcUrl:'',image:q.result.image,
+      st:q.result.st,q:q.result.q,status:'new',review:false,attempts:0,correctCount:0,wrongCount:0,lastAnsweredAt:null};
+    if((await sigIndex()).has(sigOf(rec))){ toast('全く同じ局面がすでにあります'); return; }
+    await dbPut(rec);
     QUEUE=QUEUE.filter(x=>x.id!==b.dataset.save); drawQueue(); toast('保存しました');
   }));
   $$('[data-drop]',box).forEach(b=>b.addEventListener('click',()=>{QUEUE=QUEUE.filter(x=>x.id!==b.dataset.drop);drawQueue();}));
@@ -993,14 +1171,22 @@ async function runQueue(){
 
 /* ---------- 一覧 ---------- */
 let FILTER='all';
+// 取り込んだ順に通し番号を振る（牌譜1, 牌譜2 …）
+function srcNoMap(){
+  const l=getSources(), m=new Map();
+  l.forEach((x,i)=>{ if(x.reportId) m.set(x.reportId,l.length-i); });
+  return m;
+}
 function srcLabel(r){
   if(!r) return '';
   if(r.src==='image') return '画像から取り込み';
   const id=r.reportId||'';
+  const no=srcNoMap().get(id);
+  if(no) return '牌譜'+no;
   return '牌譜 '+(id.length>8? id.slice(0,8):id);
 }
 async function renderList(){
-  const all=(await dbAll()).sort((a,b)=>(b.createdAt-a.createdAt)||((a.seq||0)-(b.seq||0)));
+  const all=(await uniqRecs()).sort((a,b)=>(b.createdAt-a.createdAt)||((a.seq||0)-(b.seq||0)));
   const s=await stats();
   const F={all:()=>true,new:r=>r.status!=='wrong'&&r.status!=='correct',wrong:r=>r.status==='wrong',
            correct:r=>r.status==='correct',review:r=>!!r.review};
@@ -1029,7 +1215,7 @@ async function renderList(){
           <span style="color:var(--good)">正解 ${c.correct}</span>
         </div>
         <button class="btn-ghost btn-sm btn-block" data-q="${esc(k)}" style="margin-top:8px">
-          この牌譜の「${esc(MODES[mode].label)}」を出題（${list.length}問）</button>
+          この牌譜の「${esc(MODES[mode].label)}」を順番に出題（${list.length}問）</button>
       </div>
       ${list.map(r=>`<div class="list-item" data-open="${esc(r.id)}">
         <div class="row" style="gap:6px;margin-bottom:4px">
@@ -1083,6 +1269,7 @@ async function openDetail(id){
 /* ---------- 設定 ---------- */
 async function renderSettings(){
   const s=await stats();
+  const dupN=(await dbAll()).length-s.total;
   view.innerHTML=`<div class="card">
     <h2>データ</h2>
     <div class="stats" style="margin-bottom:10px">
@@ -1090,7 +1277,9 @@ async function renderSettings(){
       <div><span class="n" style="color:var(--bad)">${s.wrong}</span><span class="l">不正解</span></div>
       <div><span class="n" style="color:var(--review)">${s.review}</span><span class="l">要復習</span></div>
       <div><span class="n" style="color:var(--good)">${s.correct}</span><span class="l">正解</span></div></div>
-    <p class="small muted">問題はこの端末のブラウザ内に保存され、取り込むほど蓄積されます。同じURLを再取り込みしても重複しません。</p>
+    <p class="small muted">問題はこの端末のブラウザ内に保存され、取り込むほど蓄積されます。同じURLを再取り込みしても重複しません。全く同じ局面は1問だけ出題されます。</p>
+    ${dupN?`<p class="small" style="color:var(--review)">全く同じ局面の重複データが ${dupN}問残っています（出題はされません）。</p>
+    <button class="btn-ghost btn-block btn-sm" id="dedup" style="margin-bottom:10px">重複した問題を削除する（${dupN}問）</button>`:''}
     <div class="row"><button class="btn-primary grow" id="exp">バックアップ書き出し</button>
       <button class="btn-ghost grow" id="imp">読み込み</button></div>
     <input type="file" id="impf" accept="application/json" style="display:none">
@@ -1154,10 +1343,17 @@ async function renderSettings(){
   $('#imp').addEventListener('click',()=>$('#impf').click());
   $('#impf').addEventListener('change',async e=>{
     const f=e.target.files[0];e.target.value='';if(!f)return;
-    try{const j=JSON.parse(await f.text());const ex=new Set((await dbAll()).map(r=>r.id));let n=0;
-      for(const it of (j.items||[])) if(!ex.has(it.id)){await dbPut(it);n++;}
+    try{const j=JSON.parse(await f.text());const ex=new Set((await dbAll()).map(r=>r.id));
+      const sig=await sigIndex(); let n=0,dup=0;
+      for(const it of (j.items||[])){
+        if(ex.has(it.id)) continue;
+        const g=sigOf(it); if(sig.has(g)){ dup++; continue; }
+        await dbPut(it); ex.add(it.id); sig.set(g,it); n++; }
       (j.sources||[]).forEach(addSource); await flush();
-      toast(n+'件読み込みました');renderSettings();}catch(err){toast('失敗：'+err.message);}});
+      toast(n+'件読み込みました'+(dup?`（重複 ${dup}件はスキップ）`:''));renderSettings();}catch(err){toast('失敗：'+err.message);}});
+  const dd=$('#dedup'); if(dd) dd.addEventListener('click',async()=>{
+    const n=await dedupeStored();
+    toast(n?n+'問の重複を削除しました':'重複はありませんでした'); renderSettings(); });
   $('#clr').addEventListener('click',async()=>{if(!confirm('すべての問題を削除します。よろしいですか？'))return;
     await dbClear();QUIZ=null;toast('削除しました');renderSettings();});
 }
