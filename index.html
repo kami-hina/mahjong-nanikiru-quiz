@@ -96,7 +96,7 @@ img.shot{width:100%;border-radius:10px;border:1px solid var(--line)}
 </nav>
 <script>
 "use strict";
-const APP_VERSION='2026-08-31b';
+const APP_VERSION='2026-10-18a';
 /* ========================= 小物 ========================= */
 const $=(s,r)=>(r||document).querySelector(s), $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -913,8 +913,8 @@ function renderAdd(){
   view.innerHTML=`
   <div class="card">
     <h2>Mortalの検討URLから取り込む</h2>
-    <p class="small muted">mjai.ekyu.moe の検討ページのURLを貼り付けてください。AIの推奨と食い違った局面（error）だけを抽出して問題にします。<b>APIトークンは使いません（無料）</b>。<br><b>1行に1つずつ書けば、何件でもまとめて取り込めます。</b></p>
-    <textarea id="url" rows="4" placeholder="https://mjai.ekyu.moe/killerducky/?data=/report/xxxx.json&#10;https://mjai.ekyu.moe/killerducky/?data=/report/yyyy.json">${esc(CFG.lastUrl)}</textarea>
+    <p class="small muted">mjai.ekyu.moe の検討ページのURLを貼り付けてください。AIの推奨と食い違った局面（error）だけを抽出して問題にします。<b>APIトークンは使いません（無料）</b>。<br><b>1行に1つずつ書けば、何件でもまとめて取り込めます。</b><br><b>天鳳の牌譜URL（tenhou.net/0/?log=…）や、天鳳Web版の保存データ（log0={…}）もそのまま貼れます。</b>Mortalの解析画面を入力済みで開くので、「送信」して結果URLを貼り戻すだけです。</p>
+    <textarea id="url" rows="4" placeholder="https://mjai.ekyu.moe/killerducky/?data=/report/xxxx.json&#10;https://tenhou.net/0/?log=2026101221gm-0009-0000-xxxxxxxx&amp;tw=0">${esc(CFG.lastUrl)}</textarea>
     <label>取り込む範囲</label>
     <select id="sev">
       <option value="0">すべてのミス</option>
@@ -923,6 +923,7 @@ function renderAdd(){
     </select>
     <button class="btn-primary btn-block" id="go" style="margin-top:12px">取り込む</button>
     <div id="imp" style="margin-top:10px"></div>
+    <div id="pend"></div>
     <details><summary>URLで取得できないとき</summary>
       <p class="small muted">Safariでレポートの .json を開いて保存し、そのファイルを選んでください。</p>
       <input type="file" id="jf" accept="application/json,.json">
@@ -952,7 +953,7 @@ function renderAdd(){
     fs.forEach(f=>QUEUE.unshift({id:uid(),file:f,state:'wait',msg:'待機中'}));
     drawQueue(); runQueue();
   });
-  drawQueue(); drawSources();
+  drawQueue(); drawSources(); drawPending();
 }
 function drawSources(){
   const box=$('#srcs'); if(!box) return;
@@ -960,6 +961,7 @@ function drawSources(){
   if(!l.length){ box.innerHTML='<p class="small muted">まだありません。</p>'; return; }
   box.innerHTML=l.map((x,i)=>`<div class="queue-item">
       <div class="small" style="word-break:break-all">${esc(x.url)}</div>
+      ${x.tenhou?`<div class="small muted" style="word-break:break-all">天鳳：${esc(x.tenhou)}</div>`:''}
       <div class="row" style="margin-top:6px">
         <span class="small muted">${new Date(x.at).toLocaleDateString('ja-JP')}・${x.count||'?'}問</span>
         <span class="grow"></span>
@@ -1045,8 +1047,21 @@ async function doImport(force){
   const box=$('#imp'), input=$('#url').value;
   box.innerHTML='<span class="spin"></span> 準備中…';
   CFG.lastUrl=input.trim();
-  const lines=input.split(/[\s,]+/).map(x=>x.trim()).filter(Boolean);
+  let lines=input.split(/[\s,]+/).map(x=>x.trim()).filter(Boolean);
+  const saved=tenhouFromStorage(input);
+  if(saved.length) lines=saved;
   if(!lines.length){ box.innerHTML=`<span style="color:var(--bad)">URLを入力してください</span>`; return; }
+  const tenhou=lines.filter(isTenhouUrl);
+  if(tenhou.length){
+    const r=addPending(tenhou);
+    if(r.added.length===1) window.open(mortalFormUrl(r.added[0]),'_blank');
+    drawPending();
+    lines=lines.filter(x=>!isTenhouUrl(x));
+    if(!lines.length){
+      box.innerHTML=`<div class="queue-item small">天鳳の牌譜を <b>${r.added.length}件</b> 登録しました${r.dup?`（すでに取り込み済み：${r.dup}件）`:''}。<br>下の「Mortal解析待ち」で <b>①解析</b> →「送信」→ 結果URLをコピー → <b>②貼り付け</b> の順に進めてください。</div>`;
+      return;
+    }
+  }
   if(lines.length>1) return bulkImport(lines,force);
   let url;
   try{ url=reportUrlFrom(lines[0]); }catch(e){ box.innerHTML=`<span style="color:var(--bad)">${esc(e.message)}</span>`; return; }
@@ -1060,11 +1075,11 @@ async function doImport(force){
     await ingest(rep,lines[0],id,box,true);
   }catch(e){ box.innerHTML=`<span style="color:var(--bad)">${esc(e.message)}</span>`; }
 }
-async function ingest(rep,srcUrl,reportId,box,force){
+async function ingest(rep,srcUrl,reportId,box,force,extra){
   box=box||$('#imp');
   if(!force){
     const dup=await alreadyImported(reportId);
-    if(dup) return showDup(box,dup,()=>ingest(rep,srcUrl,reportId,box,true));
+    if(dup) return showDup(box,dup,()=>ingest(rep,srcUrl,reportId,box,true,extra));
   }
   const thr=parseFloat(($('#sev')&&$('#sev').value)||'0');
   let probs=extractProblems(rep,srcUrl,reportId);
@@ -1073,7 +1088,7 @@ async function ingest(rep,srcUrl,reportId,box,force){
   const {added,updated,dup}=await saveProblems(probs);
   await flush();
   askPersist();
-  if(srcUrl) addSource({url:srcUrl, reportId, at:Date.now(), count:probs.length});
+  if(srcUrl) addSource(Object.assign({url:srcUrl, reportId, at:Date.now(), count:probs.length},extra));
   const rv=rep.review;
   box.innerHTML=`<div class="queue-item">
     <b>取り込み完了</b><br>
@@ -1083,6 +1098,69 @@ async function ingest(rep,srcUrl,reportId,box,force){
     <button class="btn-primary btn-block btn-sm" id="tostart" style="margin-top:8px">クイズを開始する</button>
   </div>`;
   const b=$('#tostart'); if(b) b.addEventListener('click',()=>{QUIZ=null;TAB='quiz';$$('nav button').forEach(x=>x.classList.toggle('on',x.dataset.tab==='quiz'));render();});
+}
+
+/* ---------- 天鳳の牌譜URL → Mortal解析 ----------
+   mjai.ekyu.moe は人間確認（Cloudflare Turnstile）付きで外から自動送信できないため、
+   牌譜URLを入力済みの状態で開き、「送信」後の結果URLを貼り戻してもらう */
+const LS_TENHOU='mq.tenhou.v1';
+const isTenhouUrl=s=>/tenhou\.net\/\d+\/?\?.*log=/.test(s);
+const tenhouKey=s=>{ const m=s.match(/log=([\w-]+)/), t=s.match(/[?&]tw=(\d)/); return m? m[1]+'@'+(t?t[1]:'') : s; };
+const getPending=()=>lsGet(LS_TENHOU,[])||[];
+const mortalFormUrl=u=>'https://mjai.ekyu.moe/ja.html?url='+encodeURIComponent(u);
+// 天鳳Web版の localStorage（log0={"log":"…","oya":2,…}）を貼られたら牌譜URLに直す
+// oya は自分から見た親の位置なので、自分の席は (4-oya)%4
+function tenhouFromStorage(text){
+  const out=[], re=/"log"\s*:\s*"([\w-]+)"[^}]*?"oya"\s*:\s*(\d)/g; let m;
+  while((m=re.exec(text))) out.push(`https://tenhou.net/0/?log=${m[1]}&tw=${(4-m[2])%4}`);
+  return out;
+}
+function addPending(urls){
+  const l=getPending(), done=new Set(getSources().filter(x=>x.tenhou).map(x=>tenhouKey(x.tenhou)));
+  const added=[]; let dup=0;
+  urls.forEach(u=>{
+    const k=tenhouKey(u);
+    if(done.has(k)){ dup++; return; }
+    if(l.some(x=>tenhouKey(x.url)===k)) return;
+    l.push({url:u,at:Date.now()}); added.push(u);
+  });
+  lsSet(LS_TENHOU,l);
+  return {added,dup};
+}
+function removePending(url){ lsSet(LS_TENHOU,getPending().filter(x=>x.url!==url)); }
+function drawPending(){
+  const box=$('#pend'); if(!box) return;
+  const l=getPending();
+  if(!l.length){ box.innerHTML=''; return; }
+  const name=u=>{ const m=u.match(/log=(\d{10})gm-[\w]+-[\w]+-([0-9a-f]+)/); return m? `${m[1].slice(0,4)}/${m[1].slice(4,6)}/${m[1].slice(6,8)} ${m[1].slice(8,10)}時 (${m[2].slice(0,6)})` : u; };
+  box.innerHTML=`<h2 style="margin-top:14px">Mortal解析待ち（${l.length}件）</h2>
+    <p class="small muted">①でMortalを開いて「送信」→ 表示された画面のURLをコピー → ②で取り込みます。</p>`
+    + l.map((x,i)=>`<div class="queue-item">
+      <div class="small" style="word-break:break-all">${esc(name(x.url))}</div>
+      <div class="row" style="margin-top:6px;gap:6px">
+        <a class="btn-ghost btn-sm" href="${esc(mortalFormUrl(x.url))}" target="_blank" rel="noopener" style="text-decoration:none">① Mortalで解析</a>
+        <button class="btn-primary btn-sm" data-pp="${i}">② 結果URLを貼り付け</button>
+        <span class="grow"></span>
+        <button class="btn-ghost btn-sm" data-pd="${i}">削除</button>
+      </div></div>`).join('');
+  $$('[data-pp]',box).forEach(b=>b.addEventListener('click',()=>pasteResult(l[+b.dataset.pp])));
+  $$('[data-pd]',box).forEach(b=>b.addEventListener('click',()=>{ removePending(l[+b.dataset.pd].url); drawPending(); }));
+}
+async function pasteResult(item){
+  const box=$('#imp');
+  let raw='';
+  try{ raw=(await navigator.clipboard.readText()||'').trim(); }catch(e){}
+  if(!/mjai\.ekyu\.moe|\.json/.test(raw)) raw=(prompt('Mortalの結果画面のURLを貼り付けてください','')||'').trim();
+  if(!raw) return;
+  let url;
+  try{ url=reportUrlFrom(raw); }catch(e){ box.innerHTML=`<span style="color:var(--bad)">${esc(e.message)}</span>`; return; }
+  const id=(url.match(/([0-9a-f]{6,})\.json/i)||[,'rep'])[1];
+  box.innerHTML='<span class="spin"></span> 準備中…';
+  try{
+    const rep=await fetchReport(url,m=>{box.innerHTML=`<span class="spin"></span> ${esc(m)}`;});
+    await ingest(rep,raw,id,box,false,{tenhou:item.url});
+    removePending(item.url); drawPending(); drawSources();
+  }catch(e){ box.innerHTML=`<span style="color:var(--bad)">${esc(e.message)}</span>`; }
 }
 
 /* ---------- 画像取り込み（任意・API使用） ---------- */
