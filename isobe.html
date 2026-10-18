@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b3a3e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="質問回答">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>磯部さんへの質問</title>
+<style>
+:root{
+  --bg:#0b2f33; --panel:#12474d; --line:#1e6a72; --fg:#eaf6f5; --muted:#9dc4c4;
+  --accent:#3ddc97; --accent2:#ffd166; --bad:#ff6b6b;
+  --safe-b:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;-webkit-text-size-adjust:100%}
+body{padding:12px 12px calc(24px + var(--safe-b))}
+main{max-width:640px;margin:0 auto}
+h1{font-size:19px;margin:4px 0 10px}
+h2{font-size:16px;margin:0 0 6px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.grow{flex:1}.muted{color:var(--muted)}.small{font-size:12px}.center{text-align:center}
+button{font:inherit;font-weight:700;border:none;border-radius:12px;padding:12px 14px;background:var(--line);color:var(--fg);cursor:pointer}
+button:disabled{opacity:.5}
+.btn-primary{background:var(--accent);color:#04281c}
+.btn-ghost{background:transparent;border:1px solid var(--line);color:var(--fg)}
+.btn-sm{padding:8px 10px;border-radius:10px;font-size:13px}
+.btn-block{display:block;width:100%}
+textarea{font:inherit;width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:#0a262a;color:var(--fg)}
+a{color:var(--accent2)}
+.badge{display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700}
+.b-wait{background:#7a2a2a;color:#ffd7d7}.b-done{background:#2c3f86;color:#dbe3ff}
+.tabs{display:flex;gap:6px;margin-bottom:10px}
+.tabs button{flex:1;background:#0a262a;border:1px solid var(--line);color:var(--muted);padding:9px 4px;font-size:13px}
+.tabs button.on{background:var(--line);color:var(--fg)}
+.item{display:block;width:100%;text-align:left;background:#0a262a;border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px;color:var(--fg);font-weight:400}
+.item b{font-size:14px}
+.boardwrap{background:#0a2b2f;border:1px solid var(--line);border-radius:14px;padding:6px}
+svg.board{display:block;width:100%;height:auto}
+.info{font-size:13px;line-height:1.7}
+.bub{border-radius:12px;padding:8px 10px;margin-top:8px;max-width:88%;font-size:14px;white-space:pre-wrap;word-break:break-word}
+.bub.me{margin-left:auto;background:#2c3f86}
+.bub.them{background:#1e5a3f}
+.bub .who{font-size:11px;color:var(--muted);margin-bottom:2px}
+.toast{position:fixed;left:50%;bottom:calc(20px + var(--safe-b));transform:translateX(-50%);background:#000c;color:#fff;padding:10px 16px;border-radius:999px;font-size:13px;z-index:99;max-width:90vw}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--muted);border-top-color:transparent;border-radius:50%;animation:sp 1s linear infinite;vertical-align:-2px}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<main id="view"><p class="muted"><span class="spin"></span> 読み込み中…</p></main>
+<script src="qa.js"></script>
+<script>
+const $=(s,r)=>(r||document).querySelector(s), $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtDT=t=>t?new Date(t).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+let toastT; function toast(m){ const o=$('.toast'); if(o) o.remove(); const d=document.createElement('div'); d.className='toast'; d.textContent=m; document.body.appendChild(d); clearTimeout(toastT); toastT=setTimeout(()=>d.remove(),2800); }
+
+// 合言葉は URL の # に入っている（何切るクイズの設定画面でコピーしたURL）
+const ROOM=(location.hash.match(/^#(?:room=)?([0-9A-Za-z_-]{24,64})/)||[])[1]||'';
+const base=`rooms/${ROOM}/threads`;
+const view=$('#view');
+let LIST=[], FILTER='wait', OPEN=null; // OPEN={t, msgs, ans}
+const isWait=t=>t.lastFrom==='hina';
+const typing=()=>{ const e=document.activeElement; return !!(e&&e.tagName==='TEXTAREA'&&e.value); };
+
+async function loadList(){
+  LIST=(await fsList(base,['title','lastFrom','lastText','updatedAt','createdAt'])).filter(t=>t.lastFrom)
+    .sort((a,b)=>(isWait(a)?0:1)-(isWait(b)?0:1)||(b.updatedAt||0)-(a.updatedAt||0));
+}
+function drawList(){
+  const nW=LIST.filter(isWait).length, nD=LIST.length-nW;
+  const show=LIST.filter(t=>FILTER==='all'||(FILTER==='wait')===isWait(t));
+  view.innerHTML=`<div class="row"><h1 class="grow">磯部さんへの質問</h1><button class="btn-ghost btn-sm" id="reload">更新</button></div>
+    <p class="small muted" style="margin-top:0">かみむらひなさんからの「何切る」の質問です。開いて回答を書いてください。</p>
+    <div class="tabs">
+      <button data-f="wait" class="${FILTER==='wait'?'on':''}">未回答 ${nW}</button>
+      <button data-f="done" class="${FILTER==='done'?'on':''}">回答済み ${nD}</button>
+      <button data-f="all" class="${FILTER==='all'?'on':''}">すべて ${LIST.length}</button>
+    </div>
+    ${show.length?show.map(t=>`<button class="item" data-t="${esc(t.id)}">
+      <div class="row" style="gap:6px">${isWait(t)?'<span class="badge b-wait">未回答</span>':'<span class="badge b-done">回答済み</span>'}
+        <span class="small muted grow">${fmtDT(t.updatedAt)}</span></div>
+      <div style="margin-top:4px"><b>${esc(t.title)}</b></div>
+      <div class="small muted" style="margin-top:2px">${isWait(t)?'質問：':'最後の回答：'}${esc(t.lastText)}</div>
+    </button>`).join(''):`<p class="small muted center">${FILTER==='wait'?'未回答の質問はありません。':'まだありません。'}</p>`}`;
+  $('#reload').addEventListener('click',refresh);
+  $$('[data-f]').forEach(b=>b.addEventListener('click',()=>{FILTER=b.dataset.f;drawList();}));
+  $$('[data-t]').forEach(b=>b.addEventListener('click',()=>openThread(b.dataset.t)));
+}
+async function openThread(id){
+  view.innerHTML='<p class="muted"><span class="spin"></span> 読み込み中…</p>';
+  try{
+    const [t,msgs]=await Promise.all([fsGet(`${base}/${id}`),fsList(`${base}/${id}/msgs`)]);
+    let info={}; try{ info=JSON.parse(t.info||'{}'); }catch(e){}
+    OPEN={t,info,msgs:msgs.sort((a,b)=>a.at-b.at),ans:OPEN&&OPEN.t.id===id?OPEN.ans:false};
+    drawThread(); window.scrollTo(0,0);
+  }catch(e){ toast(e.message); drawList(); }
+}
+function drawThread(){
+  const {t,info,msgs,ans}=OPEN;
+  const draft=($('#reply')||{}).value||'';
+  view.innerHTML=`<button class="btn-ghost btn-sm" id="back">← 質問の一覧へ</button>
+    <h1 style="margin-top:10px">${esc(t.title)}</h1>
+    <div class="boardwrap">${(ans?t.svgAns:t.svg)||''}</div>
+    <div class="card info" style="margin-top:10px">
+      ${info.round?`<div>${esc(info.round)}${info.junme?' '+info.junme+'巡目':''}${info.seat?'・'+esc(info.seat):''}</div>`:''}
+      ${info.hand?`<div>手牌：${esc(info.hand)}${info.drawn?'　ツモ：'+esc(info.drawn):''}</div>`:''}
+      ${ans?`<div>実戦：<b>${esc(info.actual)}</b>　／　Mortalの推奨：<b>${esc(info.mortal)}</b></div>`:''}
+      <button class="btn-ghost btn-sm" id="ans" style="margin-top:6px">${ans?'実戦の打牌とMortalの推奨を隠す':'実戦の打牌とMortalの推奨を見る'}</button>
+      ${info.srcUrl?`<div style="margin-top:6px"><a href="${esc(info.srcUrl)}" target="_blank" rel="noopener">牌譜の検討ページ（Mortal）を開く</a></div>`:''}
+    </div>
+    <div class="card">
+      <h2>やり取り</h2>
+      ${msgs.map(m=>`<div class="bub ${m.from==='isobe'?'me':'them'}"><div class="who">${m.from==='isobe'?'磯部さん（あなた）':'かみむらひなさん'}・${fmtDT(m.at)}</div>${esc(m.text)}</div>`).join('')}
+      <textarea id="reply" rows="5" style="margin-top:12px" placeholder="回答を書いてください">${esc(draft)}</textarea>
+      <button class="btn-primary btn-block" id="send" style="margin-top:8px">回答を送る</button>
+    </div>`;
+  $('#back').addEventListener('click',()=>{OPEN=null;refresh();});
+  $('#ans').addEventListener('click',()=>{OPEN.ans=!OPEN.ans;drawThread();});
+  $('#send').addEventListener('click',send);
+}
+async function send(){
+  const btn=$('#send'), text=$('#reply').value.trim();
+  if(!text){ toast('回答を入力してください'); return; }
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> 送信中…';
+  try{
+    const now=Date.now(), id=newId(now), path=`${base}/${OPEN.t.id}`;
+    await fsPatch(`${path}/msgs/${id}`,{from:'isobe',text,at:now});
+    await fsPatch(path,{updatedAt:now,lastFrom:'isobe',lastText:text.slice(0,80)},['updatedAt','lastFrom','lastText']);
+    $('#reply').value='';
+    toast('回答を送りました');
+    await openThread(OPEN.t.id);
+  }catch(e){ toast(e.message); btn.disabled=false; btn.textContent='回答を送る'; }
+}
+async function refresh(){
+  try{ await loadList(); }catch(e){ toast(e.message); }
+  if(!OPEN) drawList();
+}
+// 開いている間は定期的に新しい質問を確認する
+async function tick(){
+  if(document.hidden) return;
+  if(OPEN){ if(!typing()) openThread(OPEN.t.id); return; }
+  refresh();
+}
+if(!ROOM){
+  view.innerHTML=`<div class="card"><h2>URLが正しくありません</h2><p class="small muted">かみむらひなさんから届いたURLを、そのまま開いてください。</p></div>`;
+} else {
+  refresh();
+  setInterval(tick,60000);
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) tick(); });
+}
+</script>
+</body>
+</html>

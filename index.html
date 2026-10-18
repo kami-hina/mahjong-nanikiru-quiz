@@ -49,6 +49,11 @@ nav button.on{color:var(--accent)}
 .mask .cover{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:repeating-linear-gradient(135deg,#123a40 0 12px,#18474e 12px 24px);border:1px solid var(--line);border-radius:10px;color:var(--muted);font-size:13px}
 .mask .cover b{color:var(--fg);font-size:15px}
 .mask .hidden-body{visibility:hidden}
+.bub{border-radius:12px;padding:8px 10px;margin-top:8px;max-width:88%;font-size:14px;white-space:pre-wrap;word-break:break-word}
+.bub.me{margin-left:auto;background:#1e5a3f}
+.bub.them{background:#2c3f86}
+.bub .who{font-size:11px;color:var(--muted);margin-bottom:2px}
+.mask.bubmask{min-height:52px;margin-top:8px;max-width:88%}
 .boardwrap{background:#0a2b2f;border:1px solid var(--line);border-radius:14px;padding:6px}
 svg.board{display:block;width:100%;height:auto}
 .startpane{display:flex;flex-direction:column;justify-content:center;min-height:calc(100vh - 104px - var(--safe-b));min-height:calc(100dvh - 104px - var(--safe-b))}
@@ -99,9 +104,10 @@ img.shot{width:100%;border-radius:10px;border:1px solid var(--line)}
   <button data-tab="list"><span class="ico">📚</span>一覧</button>
   <button data-tab="settings"><span class="ico">⚙️</span>設定</button>
 </nav>
+<script src="qa.js"></script>
 <script>
 "use strict";
-const APP_VERSION='2026-10-18b';
+const APP_VERSION='2026-10-18c';
 /* ========================= 小物 ========================= */
 const $=(s,r)=>(r||document).querySelector(s), $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -696,10 +702,22 @@ const MODES={
   review:{label:'要復習だけ', desc:'要復習にした問題だけを出題', f:r=>!!r.review},
   new:   {label:'未出題だけ', desc:'まだ解いていない問題だけを出題', f:r=>r.status!=='wrong'&&r.status!=='correct'},
   correct:{label:'正解済みだけ', desc:'正解した問題の解き直し', f:r=>r.status==='correct'},
-  isobe: {label:'磯部さんの質問クイズ', desc:'磯部さんの回答が記入済みの問題を出題', f:r=>askState(r)==='done', key:r=>(r.ask&&r.ask.last)||0}
+  isobe: {label:'磯部さんの質問クイズ', desc:'磯部さんの回答がある問題を出題', f:r=>hasAnswer(r), key:r=>(r.ask&&r.ask.last)||0}
 };
-// 磯部さんへの質問の状態：none / wait（回答待ち）/ done（回答済み）
-const askState=r=>!(r.ask&&r.ask.q)? 'none' : (r.ask.a? 'done':'wait');
+// 磯部さんとのやり取り：rec.ask={tid, at, msgs:[{id,from:'hina'|'isobe',text,at,up}], remoteAt, ok, ng, last}
+function askMsgs(r){
+  const a=r.ask; if(!a) return [];
+  if(!a.msgs){                                   // 旧形式（q / a の1往復）から移行
+    a.msgs=[];
+    if(a.q) a.msgs.push({id:(a.at||0).toString(36)+'-hina',from:'hina',text:a.q,at:a.at||Date.now(),up:0});
+    if(a.a) a.msgs.push({id:(a.aAt||a.at||0).toString(36)+'-isobe',from:'isobe',text:a.a,at:a.aAt||Date.now(),up:0});
+    delete a.q; delete a.a;
+  }
+  return a.msgs;
+}
+// 状態：none / wait（最後が自分の質問＝回答待ち）/ done（最後が磯部さん＝回答済み）
+const askState=r=>{ const m=askMsgs(r); return !m.length? 'none' : (m[m.length-1].from==='isobe'? 'done':'wait'); };
+const hasAnswer=r=>askMsgs(r).some(m=>m.from==='isobe');
 function pickFrom(pool,prevId,key){
   key=key||(r=>r.lastAnsweredAt||0);
   const c=pool.filter(r=>r.id!==prevId);
@@ -767,7 +785,7 @@ async function renderQuiz(){
   const s=await stats();
   const groups=await srcGroups();
   const recs=await uniqRecs();
-  const nWait=recs.filter(r=>askState(r)==='wait').length, nDone=recs.filter(r=>askState(r)==='done').length;
+  const nWait=recs.filter(r=>askState(r)==='wait').length, nDone=recs.filter(r=>askState(r)==='done').length, nAns=recs.filter(hasAnswer).length;
   view.innerHTML=`<div class="${groups.length>1?'':'startpane'}"><div class="card" style="margin:0">
     <h2 class="center">何切るクイズ</h2>
     <p class="small muted center">解きたいリストを選んでください。<br>選んだリストの中だけを出題します。</p>
@@ -776,10 +794,11 @@ async function renderQuiz(){
   </div>
   <div class="card" style="margin:12px 0 0">
     <h2 style="font-size:16px">磯部さんの質問クイズ</h2>
-    <p class="small muted">各問題の画面で磯部さんに質問し、もらった回答を記入すると、その回答を隠して出題します。</p>
+    <p class="small muted">各問題の画面から磯部さんに質問すると、「磯部さんへの質問用アプリ」に牌譜つきで届きます。届いた回答は隠して出題します。</p>
     <div class="cs"><span style="color:#9fb4ff">回答済み ${nDone}</span><span style="color:var(--accent2)">回答待ち ${nWait}</span></div>
-    <button class="btn-primary btn-block" id="isobe" style="margin-top:10px" ${nDone?'':'disabled'}>磯部さんの質問クイズを始める（${nDone}問）</button>
-    <button class="btn-ghost btn-block btn-sm" id="asklist" style="margin-top:8px" ${nWait+nDone?'':'disabled'}>質問の一覧・回答の記入（回答待ち ${nWait}件）</button>
+    <button class="btn-primary btn-block" id="isobe" style="margin-top:10px" ${nAns?'':'disabled'}>磯部さんの質問クイズを始める（${nAns}問）</button>
+    <button class="btn-ghost btn-block btn-sm" id="asklist" style="margin-top:8px" ${nWait+nDone?'':'disabled'}>質問の一覧・やり取りの履歴（回答待ち ${nWait}件）</button>
+    <button class="btn-ghost btn-block btn-sm" id="isobeurl" style="margin-top:8px">磯部さん用アプリのURLをコピー</button>
   </div>
   ${groups.length?`<div class="card" style="margin:12px 0 0">
     <h2 style="font-size:16px">牌譜ごとに解く</h2>
@@ -795,124 +814,189 @@ async function renderQuiz(){
   $$('.srcbtn').forEach(b=>b.addEventListener('click',()=>{QSRC=b.dataset.s;renderQuiz();}));
   $('#isobe').addEventListener('click',()=>startQuiz('isobe'));
   $('#asklist').addEventListener('click',()=>{QASK=true;renderQuiz();});
+  $('#isobeurl').addEventListener('click',()=>copyText(isobeUrl(),'磯部さん用アプリのURLをコピーしました'));
 }
-// 磯部さんへの質問の一覧（回答待ち → 回答済み）。ここから回答を記入できる
-async function renderAskList(){
-  const recs=(await uniqRecs()).filter(r=>askState(r)!=='none')
-    .sort((a,b)=>(askState(a)==='wait'?0:1)-(askState(b)==='wait'?0:1)||(b.ask.at||0)-(a.ask.at||0));
-  view.innerHTML=`<button class="btn-ghost btn-sm" id="back">← 戻る</button>
-  <div class="card" style="margin-top:10px">
-    <h2>磯部さんへの質問</h2>
-    <p class="small muted">回答が来たら、回答欄に記入して保存すると「回答済み」になり、磯部さんの質問クイズに出題されます。</p>
-  </div>
-  ${recs.length?recs.map(r=>`<div class="card">
-    <div class="row" style="gap:6px;margin-bottom:6px">
-      ${askState(r)==='wait'?'<span class="badge b-wait">回答待ち</span>':'<span class="badge b-done">回答済み</span>'}
-      <span class="small muted">${esc(srcLabel(r))} ${esc(r.st.roundText||'')} ${r.st.junme?r.st.junme+'巡目':''}・質問 ${fmtDT(r.ask.at)}</span></div>
-    ${tilesHTML((r.st.drawn?r.st.hand.concat([r.st.drawn]):r.st.hand).slice(0,14))}
-    <div class="expl">${esc(r.ask.q)}</div>
-    ${askState(r)==='wait'?`<label class="small">磯部さんの回答</label>
-      <textarea rows="3" data-a="${esc(r.id)}" placeholder="磯部さんからの回答を記入"></textarea>
-      <button class="btn-primary btn-block btn-sm" data-sa="${esc(r.id)}" style="margin-top:6px">回答を保存（回答済みにする）</button>`
-    :`<div class="mask" data-mask><div class="expl hidden-body" style="margin-top:0">${esc(r.ask.a)}</div><div class="cover"><b>磯部さんの回答</b><span>タップして見る</span></div></div>`}
-    <button class="btn-ghost btn-block btn-sm" data-op="${esc(r.id)}" style="margin-top:8px">この問題を開く</button>
-  </div>`).join(''):'<p class="small muted center">まだ質問はありません。</p>'}`;
-  $('#back').addEventListener('click',()=>{QASK=false;renderQuiz();});
-  bindMasks(view);
-  $$('[data-sa]').forEach(b=>b.addEventListener('click',async()=>{
-    const r=await dbGet(b.dataset.sa), t=$(`textarea[data-a="${CSS.escape(b.dataset.sa)}"]`).value.trim();
-    if(!t){ toast('回答を入力してください'); return; }
-    await saveAnswer(r,t); renderAskList();
-  }));
-  $$('[data-op]').forEach(b=>b.addEventListener('click',async()=>{
-    const r=await dbGet(b.dataset.op); if(!r) return;
-    QASK=false; QUIZ={rec:r,reveal:false,mode:'auto'}; drawQuiz();
-  }));
+/* ---------- 磯部さんとの共有（「磯部さんへの質問用アプリ」isobe.html と Firestore でやり取り） ---------- */
+const LS_ROOM='mq.room';
+const getRoom=()=>localStorage.getItem(LS_ROOM)||'';
+function ensureRoom(){
+  let r=getRoom(); if(r) return r;
+  const u=new Uint8Array(16); crypto.getRandomValues(u);
+  r=[...u].map(x=>x.toString(16).padStart(2,'0')).join('');
+  localStorage.setItem(LS_ROOM,r); return r;
 }
+// URL の #room=… で合言葉を受け取る（別の端末に引き継ぐとき用）
+(function(){
+  const m=location.hash.match(/room=([0-9A-Za-z_-]{24,64})/);
+  if(m){ localStorage.setItem(LS_ROOM,m[1]); history.replaceState(null,'',location.pathname+location.search); }
+})();
+const appBase=()=>location.href.split('#')[0].split('?')[0].replace(/[^/]*$/,'');
+const isobeUrl=()=>appBase()+'isobe.html#'+ensureRoom();
+const deviceUrl=()=>appBase()+'#room='+ensureRoom();
+async function copyText(t,msg){
+  try{ await navigator.clipboard.writeText(t); toast(msg||'コピーしました'); }catch(e){ prompt('コピーしてください',t); }
+}
+const askTitle=r=>`${srcLabel(r)} ${r.st.roundText||''}${r.st.junme?' '+r.st.junme+'巡目':''} ${questionText(r)}`;
+function askInfo(r){
+  const st=r.st||{}, q=r.q||{};
+  return {round:st.roundText||'', junme:st.junme||0, seat:st.seatText||'', question:questionText(r),
+    hand:(st.hand||[]).map(tileName).join(' '), drawn:st.drawn?tileName(st.drawn):'',
+    actual:q.actualText||tileName(q.actual), mortal:q.answerText||tileName(q.answer), srcUrl:r.srcUrl||''};
+}
+async function addMsg(rec,from,text){
+  const now=Date.now();
+  rec.ask=rec.ask||{at:now};
+  const m=askMsgs(rec);
+  if(!rec.ask.tid) rec.ask.tid='t'+newId(now);
+  m.push({id:newId(now),from,text,at:now,up:0});
+  rec.ask.updatedAt=now;
+  await dbPut(rec); await flush();
+  pushAsk(rec).then(()=>{ if(QUIZ&&QUIZ.rec===rec&&!typing()) drawQuiz(); })
+    .catch(e=>toast(e.message+'。通信できるときに自動で送り直します',4000));
+}
+// 未送信のやり取りを送る（初回は牌譜の図と局面情報も一緒に送る）
+async function pushAsk(rec){
+  const a=rec.ask, room=ensureRoom(), path=`rooms/${room}/threads/${a.tid}`;
+  const msgs=askMsgs(rec), pend=msgs.filter(m=>!m.up);
+  if(!pend.length && a.threadUp) return;
+  if(!a.threadUp){
+    await fsPatch(path,{title:askTitle(rec), info:JSON.stringify(askInfo(rec)),
+      svg:boardSVG(rec,false), svgAns:boardSVG(rec,true),
+      createdAt:a.at||Date.now(), updatedAt:Date.now(), lastFrom:'', lastText:''});
+    a.threadUp=1;
+  }
+  for(const m of pend){ await fsPatch(`${path}/msgs/${m.id}`,{from:m.from,text:m.text,at:m.at}); m.up=1; }
+  const last=msgs[msgs.length-1], now=Date.now();
+  if(last) await fsPatch(path,{updatedAt:now,lastFrom:last.from,lastText:last.text.slice(0,80)},['updatedAt','lastFrom','lastText']);
+  a.remoteAt=now;
+  await dbPut(rec);
+}
+// 磯部さんからの回答を受け取る
+let PULLING=false;
+async function pullAsk(quiet){
+  const room=getRoom(); if(!room||PULLING) return 0;
+  const recs=(await dbAll()).filter(r=>r.ask&&r.ask.tid); if(!recs.length) return 0;
+  PULLING=true; let got=0;
+  try{
+    for(const r of recs) if(!r.ask.threadUp||askMsgs(r).some(m=>!m.up)) await pushAsk(r).catch(()=>{});
+    const remote=new Map((await fsList(`rooms/${room}/threads`,['updatedAt'])).map(t=>[t.id,t]));
+    for(const r of recs){
+      const t=remote.get(r.ask.tid);
+      if(!t||(t.updatedAt||0)<=(r.ask.remoteAt||0)) continue;
+      const mine=askMsgs(r), have=new Set(mine.map(m=>m.id));
+      (await fsList(`rooms/${room}/threads/${r.ask.tid}/msgs`)).forEach(m=>{
+        if(have.has(m.id)) return;
+        mine.push({id:m.id,from:m.from,text:m.text,at:m.at,up:1});
+        if(m.from==='isobe') got++;
+      });
+      mine.sort((x,y)=>x.at-y.at);
+      r.ask.remoteAt=t.updatedAt; r.ask.updatedAt=Date.now();
+      await dbPut(r);
+    }
+    await flush();
+  }catch(e){ if(!quiet) toast(e.message); }
+  finally{ PULLING=false; }
+  if(got){ toast(`磯部さんから回答が ${got}件 届きました`,4000); refreshAfterPull(); }
+  return got;
+}
+const typing=()=>{ const e=document.activeElement; return !!(e&&/^(TEXTAREA|INPUT)$/.test(e.tagName)&&e.value); };
+function refreshAfterPull(){
+  if(TAB!=='quiz'||typing()) return;
+  if(!QUIZ) renderQuiz(); else if(QUIZ.mode!=='isobe') drawQuiz();
+}
+// やり取りの表示（磯部さんの発言は mask=true のとき目隠し）
+function bubbleHTML(m,mask){
+  const me=m.from==='hina';
+  const b=`<div class="bub ${me?'me':'them'}"><div class="who">${me?'自分':'磯部さん'}・${fmtDT(m.at)}${me&&!m.up?'（未送信）':''}</div>${esc(m.text)}</div>`;
+  if(me||!mask) return b;
+  return `<div class="mask bubmask" data-mask><div class="hidden-body">${b}</div><div class="cover"><b>磯部さんの回答</b><span>タップして見る</span></div></div>`;
+}
+const threadHTML=(r,mask)=>askMsgs(r).map(m=>bubbleHTML(m,mask)).join('');
+const stateBadge=s=>s==='wait'?'<span class="badge b-wait">回答待ち</span>':s==='done'?'<span class="badge b-done">回答済み</span>':'';
 function bindMasks(root){
   $$('[data-mask]',root).forEach(m=>m.addEventListener('click',()=>{
     const c=m.querySelector('.cover'); if(c) c.remove();
     const h=m.querySelector('.hidden-body'); if(h) h.classList.remove('hidden-body');
   },{once:true}));
 }
-async function saveQuestion(r,text){
-  const now=Date.now();
-  r.ask=Object.assign({},r.ask,{q:text,at:(r.ask&&r.ask.at)||now,updatedAt:now});
-  await dbPut(r); await flush();
-  toast('「回答待ち」に入れました');
-}
-async function saveAnswer(r,text){
-  const now=Date.now();
-  r.ask=Object.assign({},r.ask,{a:text,aAt:(r.ask&&r.ask.aAt)||now,updatedAt:now});
-  await dbPut(r); await flush();
-  toast('「回答済み」に入れました');
+// 磯部さんへの質問の一覧（回答待ち → 回答済み）とやり取りの履歴
+async function renderAskList(){
+  const recs=(await uniqRecs()).filter(r=>askState(r)!=='none')
+    .sort((a,b)=>(askState(a)==='wait'?0:1)-(askState(b)==='wait'?0:1)||(b.ask.updatedAt||0)-(a.ask.updatedAt||0));
+  view.innerHTML=`<button class="btn-ghost btn-sm" id="back">← 戻る</button>
+  <div class="card" style="margin-top:10px">
+    <div class="row"><h2 class="grow" style="margin:0">磯部さんへの質問</h2><button class="btn-ghost btn-sm" id="pull">更新</button></div>
+    <p class="small muted">磯部さんが「磯部さんへの質問用アプリ」で回答すると、ここに届きます（回答は目隠し。タップで表示）。</p>
+  </div>
+  ${recs.length?recs.map(r=>`<div class="card">
+    <div class="row" style="gap:6px;margin-bottom:6px">${stateBadge(askState(r))}
+      <span class="small muted">${esc(srcLabel(r))} ${esc(r.st.roundText||'')} ${r.st.junme?r.st.junme+'巡目':''}</span></div>
+    ${tilesHTML((r.st.drawn?r.st.hand.concat([r.st.drawn]):r.st.hand).slice(0,14))}
+    ${threadHTML(r,true)}
+    <button class="btn-ghost btn-block btn-sm" data-op="${esc(r.id)}" style="margin-top:10px">この問題を開く（追加で質問する）</button>
+  </div>`).join(''):'<p class="small muted center">まだ質問はありません。</p>'}`;
+  $('#back').addEventListener('click',()=>{QASK=false;renderQuiz();});
+  $('#pull').addEventListener('click',async()=>{ const n=await pullAsk(); if(!n) toast('新しい回答はまだありません'); renderAskList(); });
+  bindMasks(view);
+  $$('[data-op]').forEach(b=>b.addEventListener('click',async()=>{
+    const r=await dbGet(b.dataset.op); if(!r) return;
+    QASK=false; QUIZ={rec:r,reveal:false,mode:'auto'}; drawQuiz();
+  }));
 }
 // LINEなどで送りやすいように、局面と質問をまとめた文
 function askShareText(r){
   const st=r.st||{}, hand=(st.hand||[]).map(tileName).join(' ');
-  return `【${st.roundText||''}${st.junme?' '+st.junme+'巡目':''}】${questionText(r)}\n手牌：${hand}${st.drawn?'　ツモ：'+tileName(st.drawn):''}\n${r.srcUrl?r.srcUrl+'\n':''}質問：${r.ask.q}`;
+  const q=askMsgs(r).filter(m=>m.from==='hina').pop();
+  return `【${st.roundText||''}${st.junme?' '+st.junme+'巡目':''}】${questionText(r)}\n手牌：${hand}${st.drawn?'　ツモ：'+tileName(st.drawn):''}\n${r.srcUrl?r.srcUrl+'\n':''}質問：${q?q.text:''}`;
 }
-// 各問題の画面に出す「磯部さんに質問」欄
+// 各問題の画面に出す「磯部さんに質問」欄（やり取りの履歴つき）
 function askBoxHTML(rec){
-  const s=askState(rec), ed=QUIZ.askEdit;
-  if(s==='none'||ed==='q') return `<div class="card" style="margin-top:12px">
-    <h2 style="font-size:16px">磯部さんに質問する</h2>
-    <textarea id="askq" rows="3" placeholder="例：ここは何を切るのがよかったですか？">${ed==='q'?esc(rec.ask.q):''}</textarea>
-    <button class="btn-ghost btn-block btn-sm" id="askqs" style="margin-top:6px">質問を保存（回答待ちにする）</button>
-    ${ed==='q'?'<button class="btn-ghost btn-block btn-sm" id="askcancel" style="margin-top:6px">キャンセル</button>':''}
-  </div>`;
-  const head=`<div class="row" style="gap:6px">
-      ${s==='wait'?'<span class="badge b-wait">回答待ち</span>':'<span class="badge b-done">回答済み</span>'}
-      <b style="font-size:15px">磯部さんへの質問</b><span class="grow"></span>
-      <span class="small muted">${fmtDT(rec.ask.at)}</span></div>
-    <div class="expl">${esc(rec.ask.q)}</div>`;
-  if(s==='wait'||ed==='a') return `<div class="card" style="margin-top:12px">${head}
-    <div class="row" style="margin-top:6px">
-      <button class="btn-ghost btn-sm grow" id="askcopy">質問文をコピー</button>
-      <button class="btn-ghost btn-sm" id="askqe">質問を編集</button>
-      <button class="btn-ghost btn-sm" id="askdel">取り消し</button></div>
-    <label class="small">磯部さんの回答（回答が来たら記入）</label>
-    <textarea id="aska" rows="3" placeholder="磯部さんからの回答を記入">${ed==='a'?esc(rec.ask.a):''}</textarea>
-    <button class="btn-primary btn-block btn-sm" id="askas" style="margin-top:6px">回答を保存（回答済みにする）</button>
-  </div>`;
-  return `<div class="card" style="margin-top:12px">${head}
-    <div class="mask" data-mask><div class="expl hidden-body" style="margin-top:0">${esc(rec.ask.a)}</div>
-      <div class="cover"><b>磯部さんの回答</b><span>タップして見る</span></div></div>
-    <button class="btn-ghost btn-block btn-sm" id="askae" style="margin-top:8px">回答を編集</button>
+  const s=askState(rec);
+  return `<div class="card" style="margin-top:12px">
+    <div class="row" style="gap:6px">${stateBadge(s)}<b style="font-size:15px">${s==='none'?'磯部さんに質問する':'磯部さんとのやり取り'}</b>
+      <span class="grow"></span>${s!=='none'?'<button class="btn-ghost btn-sm" id="askpull">更新</button>':''}</div>
+    ${threadHTML(rec,true)}
+    <textarea id="askq" rows="3" style="margin-top:10px" placeholder="${s==='none'?'例：ここは何を切るのがよかったですか？':'回答を見て、さらに質問する'}"></textarea>
+    <button class="btn-primary btn-block btn-sm" id="askqs" style="margin-top:6px">${s==='none'?'磯部さんに質問を送る':'追加で質問を送る'}</button>
+    <p class="small muted" style="margin:6px 0 0">質問は牌譜の図つきで「磯部さんへの質問用アプリ」に届き、回答はここに届きます。</p>
+    <details style="margin-top:8px"><summary class="small muted">そのほかの操作</summary>
+      <button class="btn-ghost btn-block btn-sm" id="isourl" style="margin-top:6px">磯部さん用アプリのURLをコピー</button>
+      ${s!=='none'?`<button class="btn-ghost btn-block btn-sm" id="askcopy" style="margin-top:6px">質問文をコピー（LINEなどで送る用）</button>
+      <label class="small">磯部さんの回答を手で記入する（アプリ以外で回答をもらったとき）</label>
+      <textarea id="aska" rows="2" placeholder="磯部さんからの回答"></textarea>
+      <button class="btn-ghost btn-block btn-sm" id="askas" style="margin-top:6px">回答として保存</button>`:''}
+    </details>
   </div>`;
 }
 function bindAskBox(rec){
   const on=(id,fn)=>{ const e=$('#'+id); if(e) e.addEventListener('click',fn); };
   bindMasks($('#askbox'));
   on('askqs',async()=>{ const t=$('#askq').value.trim(); if(!t){ toast('質問を入力してください'); return; }
-    await saveQuestion(rec,t); QUIZ.askEdit=null; drawQuiz(); });
-  on('askcancel',()=>{ QUIZ.askEdit=null; drawQuiz(); });
-  on('askqe',()=>{ QUIZ.askEdit='q'; drawQuiz(); });
-  on('askae',()=>{ QUIZ.askEdit='a'; drawQuiz(); });
-  on('askdel',async()=>{ if(!confirm('この質問を取り消しますか？')) return; delete rec.ask; await dbPut(rec); await flush(); drawQuiz(); });
+    await addMsg(rec,'hina',t); toast('磯部さんに質問を送りました'); drawQuiz(); });
   on('askas',async()=>{ const t=$('#aska').value.trim(); if(!t){ toast('回答を入力してください'); return; }
-    await saveAnswer(rec,t); QUIZ.askEdit=null; drawQuiz(); });
-  on('askcopy',async()=>{ try{ await navigator.clipboard.writeText(askShareText(rec)); toast('コピーしました'); }
-    catch(e){ prompt('コピーしてください',askShareText(rec)); } });
+    await addMsg(rec,'isobe',t); toast('回答を保存しました'); drawQuiz(); });
+  on('askpull',async()=>{ const n=await pullAsk(); if(!n) toast('新しい回答はまだありません'); });
+  on('isourl',()=>copyText(isobeUrl(),'磯部さん用アプリのURLをコピーしました'));
+  on('askcopy',()=>copyText(askShareText(rec)));
 }
-// 磯部さんの質問クイズ：質問と局面を見て、磯部さんの回答を思い出す
+// 磯部さんの質問クイズ：局面と自分の質問を見て、磯部さんの回答を思い出す
 function drawIsobe(){
   const {rec,reveal}=QUIZ, q=rec.q, a=rec.ask;
   view.innerHTML=`
-    <div class="row" style="margin-bottom:8px"><span class="badge b-done">回答済み</span>
+    <div class="row" style="margin-bottom:8px">${stateBadge(askState(rec))}
       <span class="chip">${esc(MODES.isobe.label)}</span><span class="grow"></span>
       <span class="small muted">◯${a.ok||0} / ✕${a.ng||0}</span></div>
     <div class="boardwrap">${boardSVG(rec,reveal)}</div>
-    <div class="expl"><span class="small muted">磯部さんへの質問（${fmtDT(a.at)}）</span><br>${esc(a.q)}</div>
-    ${reveal?`<div class="expl" style="border-color:#5b6fc4"><b>磯部さんの回答</b><br>${esc(a.a)}</div>
-      <div class="small muted" style="margin-top:8px">参考：Mortalの推奨 ${esc(q.answerText||tileName(q.answer))}／実戦 ${esc(q.actualText||tileName(q.actual))}</div>`
-    :`<div class="mask" id="imask"><div class="expl hidden-body" style="margin-top:0">${esc(a.a)}</div><div class="cover"><b>磯部さんの回答</b><span>思い出してからタップ</span></div></div>`}
+    <div class="card" style="margin-top:10px">${threadHTML(rec,!reveal)}</div>
+    ${reveal?`<div class="small muted">参考：Mortalの推奨 ${esc(q.answerText||tileName(q.answer))}／実戦 ${esc(q.actualText||tileName(q.actual))}</div>`:''}
     <div id="act" style="margin-top:12px"></div>`;
+  bindMasks(view);
   const act=$('#act');
   if(!reveal){
-    $('#imask').addEventListener('click',()=>{QUIZ.reveal=true;drawQuiz();});
-    act.innerHTML=`<div class="row"><button class="btn-ghost grow btn-sm" id="skip">スキップ</button>
+    act.innerHTML=`<button class="btn-primary btn-block" id="iall">磯部さんの回答をすべて見る</button>
+      <div class="row" style="margin-top:8px"><button class="btn-ghost grow btn-sm" id="skip">スキップ</button>
       <button class="btn-ghost btn-sm" id="quit">終了</button></div>`;
+    $('#iall').addEventListener('click',()=>{QUIZ.reveal=true;drawQuiz();});
   } else {
     act.innerHTML=`<div class="row">
         <button class="btn-primary grow" id="iok">◯ 覚えてた</button>
@@ -1514,6 +1598,18 @@ async function renderSettings(){
   const s=await stats();
   const dupN=(await dbAll()).length-s.total;
   view.innerHTML=`<div class="card">
+    <h2>磯部さんとの共有</h2>
+    <p class="small muted">このURLを磯部さんに渡すと、ここで送った質問が牌譜つきで届き、磯部さんが回答できます。</p>
+    <label>磯部さん用アプリのURL</label>
+    <input readonly value="${esc(isobeUrl())}" onclick="this.select()">
+    <button class="btn-primary btn-block btn-sm" id="cpisobe" style="margin-top:6px">磯部さん用URLをコピー</button>
+    <label>別の端末（スマホ・PC）でこの質問を引き継ぐURL</label>
+    <input readonly value="${esc(deviceUrl())}" onclick="this.select()">
+    <button class="btn-ghost btn-block btn-sm" id="cpdev" style="margin-top:6px">引き継ぎ用URLをコピー</button>
+    <p class="small muted" style="margin:6px 0 0">URLには合言葉が入っています。磯部さん以外には渡さないでください。</p>
+    <button class="btn-ghost btn-block btn-sm" id="pullnow" style="margin-top:8px">今すぐ回答を受け取る</button>
+  </div>
+  <div class="card">
     <h2>データ</h2>
     <div class="stats" style="margin-bottom:10px">
       <div><span class="n">${s.total}</span><span class="l">問題</span></div>
@@ -1577,6 +1673,9 @@ async function renderSettings(){
     toast(DIAG.persisted===true?'永続ストレージが許可されました':'この環境では許可されませんでした（ホーム画面に追加すると通りやすくなります）',4000);
     renderSettings(); });
   $('#save').addEventListener('click',()=>{CFG.key=$('#key').value.trim();CFG.model=$('#model').value;CFG.proxy=$('#proxy').value.trim();toast('保存しました');});
+  $('#cpisobe').addEventListener('click',()=>copyText(isobeUrl(),'磯部さん用アプリのURLをコピーしました'));
+  $('#cpdev').addEventListener('click',()=>copyText(deviceUrl(),'引き継ぎ用URLをコピーしました'));
+  $('#pullnow').addEventListener('click',async()=>{ const n=await pullAsk(); if(!n) toast('新しい回答はまだありません'); });
   $('#exp').addEventListener('click',async()=>{
     const all=await dbAll();
     const b=new Blob([JSON.stringify({v:3,exportedAt:Date.now(),items:all,sources:getSources()})],{type:'application/json'});
@@ -1604,6 +1703,9 @@ async function boot(){
   await loadAll();
   render();
   askPersist();
+  pullAsk(true);
+  setInterval(()=>{ if(!document.hidden) pullAsk(true); },60000);
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pullAsk(true); });
   if(DIAG.restored>0) toast(DIAG.restored+'件のデータを復元しました');
   else if(String(DIAG.idb).indexOf('使用不可')===0 && String(DIAG.ls).indexOf('OK')!==0)
     toast('この環境ではデータを保存できません。プライベートブラウズを解除するか、ホーム画面に追加してください',7000);
