@@ -44,6 +44,11 @@ nav button.on{color:var(--accent)}
 .badge{display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700}
 .b-new{background:#1e6a72;color:#d8f5f2}.b-correct{background:#14603f;color:#c8ffe6}
 .b-wrong{background:#6d2020;color:#ffd7d7}.b-review{background:#7a4a12;color:#ffe3c0}
+.b-wait{background:#5a4a10;color:#fff1b8}.b-done{background:#2c3f86;color:#dbe3ff}
+.mask{position:relative;min-height:64px;cursor:pointer;margin-top:10px}
+.mask .cover{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:repeating-linear-gradient(135deg,#123a40 0 12px,#18474e 12px 24px);border:1px solid var(--line);border-radius:10px;color:var(--muted);font-size:13px}
+.mask .cover b{color:var(--fg);font-size:15px}
+.mask .hidden-body{visibility:hidden}
 .boardwrap{background:#0a2b2f;border:1px solid var(--line);border-radius:14px;padding:6px}
 svg.board{display:block;width:100%;height:auto}
 .startpane{display:flex;flex-direction:column;justify-content:center;min-height:calc(100vh - 104px - var(--safe-b));min-height:calc(100dvh - 104px - var(--safe-b))}
@@ -96,7 +101,7 @@ img.shot{width:100%;border-radius:10px;border:1px solid var(--line)}
 </nav>
 <script>
 "use strict";
-const APP_VERSION='2026-10-18a';
+const APP_VERSION='2026-10-18b';
 /* ========================= 小物 ========================= */
 const $=(s,r)=>(r||document).querySelector(s), $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -155,7 +160,7 @@ function putBack(x,y,w,rot){ return put('back',x,y,w,rot); }
    ・取り込み元URLと学習状況は別枠でも保存し、最悪の場合もワンタップで作り直せる
 ============================================================================================ */
 const DBN='mahjong-quiz', STORE='problems';
-const LS_DB='mq.db.v1', LS_STAT='mq.stat.v1', LS_SRC='mq.src.v1';
+const LS_DB='mq.db.v1', LS_STAT='mq.stat.v1', LS_SRC='mq.src.v1', LS_ASK='mq.ask.v1';
 let _db=null, MEM=new Map(), DIRTY=new Set(), DELETED=new Set(), saveTimer=null;
 const DIAG={idb:'未確認', ls:'未確認', persisted:null, lastSaveAt:null, lastError:null, restored:0, quota:null, usage:null};
 
@@ -211,6 +216,9 @@ async function loadAll(){
   const stat=lsGet(LS_STAT,{})||{};
   MEM.forEach(r=>{ const t=stat[r.id];
     if(t && (t[4]||0)>(r.lastAnsweredAt||0)){ r.status=t[0]; r.review=!!t[1]; r.correctCount=t[2]||0; r.wrongCount=t[3]||0; r.lastAnsweredAt=t[4]||null; } });
+  // 磯部さんへの質問・回答の控え
+  const askBk=lsGet(LS_ASK,{})||{};
+  MEM.forEach(r=>{ const a=askBk[r.id]; if(a && (a.updatedAt||0)>((r.ask&&r.ask.updatedAt)||0)) r.ask=a; });
   // 片方にしか無いレコードは書き戻す
   const inIdb=new Set(fromIdb.map(r=>r.id)), inLs=new Set(fromLs.map(r=>r.id));
   let need=false;
@@ -225,6 +233,7 @@ async function flush(){
   const recs=[...MEM.values()];
   const stat={}; recs.forEach(r=>{ stat[r.id]=[r.status,r.review?1:0,r.correctCount||0,r.wrongCount||0,r.lastAnsweredAt||0]; });
   lsSet(LS_STAT,stat);
+  const ask={}; recs.forEach(r=>{ if(r.ask) ask[r.id]=r.ask; }); lsSet(LS_ASK,ask);
   if(lsSet(LS_DB, recs.map(r=>{ const c=Object.assign({},r); delete c.image; return c; }))) DIAG.ls='OK（'+recs.length+'件）';
   else DIAG.ls='書き込み失敗（容量超過など）';
   const ids=[...DIRTY], dels=[...DELETED];
@@ -240,7 +249,7 @@ const dbGet=async id=>MEM.get(id);
 const dbPut=async r=>{ r.updatedAt=Date.now(); MEM.set(r.id,r); DIRTY.add(r.id); DELETED.delete(r.id); saveSoon(); return r; };
 const dbDel=async id=>{ MEM.delete(id); DIRTY.delete(id); DELETED.add(id); saveSoon(0); };
 const dbClear=async()=>{ MEM.forEach((v,k)=>DELETED.add(k)); MEM.clear(); DIRTY.clear();
-  try{ localStorage.removeItem(LS_DB); localStorage.removeItem(LS_STAT); }catch(e){} await flush(); };
+  try{ localStorage.removeItem(LS_DB); localStorage.removeItem(LS_STAT); localStorage.removeItem(LS_ASK); }catch(e){} await flush(); };
 // 取り込み元URLの控え（データが消えてもワンタップで復元できる）
 const getSources=()=>lsGet(LS_SRC,[])||[];
 // 取り込んだ問題を保存する（既存なら学習状況を維持したまま中身だけ最新化）
@@ -320,6 +329,7 @@ async function dedupeStored(){
 function applySavedStatus(r){
   const t=(lsGet(LS_STAT,{})||{})[r.id];
   if(t){ r.status=t[0]||'new'; r.review=!!t[1]; r.correctCount=t[2]||0; r.wrongCount=t[3]||0; r.lastAnsweredAt=t[4]||null; }
+  const a=(lsGet(LS_ASK,{})||{})[r.id]; if(a&&!r.ask) r.ask=a;
   return r;
 }
 function addSource(src){
@@ -685,12 +695,16 @@ const MODES={
   wrong: {label:'不正解だけ', desc:'間違えた問題だけを出題', f:r=>r.status==='wrong'},
   review:{label:'要復習だけ', desc:'要復習にした問題だけを出題', f:r=>!!r.review},
   new:   {label:'未出題だけ', desc:'まだ解いていない問題だけを出題', f:r=>r.status!=='wrong'&&r.status!=='correct'},
-  correct:{label:'正解済みだけ', desc:'正解した問題の解き直し', f:r=>r.status==='correct'}
+  correct:{label:'正解済みだけ', desc:'正解した問題の解き直し', f:r=>r.status==='correct'},
+  isobe: {label:'磯部さんの質問クイズ', desc:'磯部さんの回答が記入済みの問題を出題', f:r=>askState(r)==='done', key:r=>(r.ask&&r.ask.last)||0}
 };
-function pickFrom(pool,prevId){
+// 磯部さんへの質問の状態：none / wait（回答待ち）/ done（回答済み）
+const askState=r=>!(r.ask&&r.ask.q)? 'none' : (r.ask.a? 'done':'wait');
+function pickFrom(pool,prevId,key){
+  key=key||(r=>r.lastAnsweredAt||0);
   const c=pool.filter(r=>r.id!==prevId);
   if(!c.length) return null;
-  c.sort((a,b)=>(a.lastAnsweredAt||0)-(b.lastAnsweredAt||0));
+  c.sort((a,b)=>key(a)-key(b));
   const head=c.slice(0,Math.max(1,Math.ceil(c.length*0.4)));
   return head[Math.floor(Math.random()*head.length)];
 }
@@ -718,7 +732,7 @@ async function pickNext(prevId,mode,src){
     return rec;
   }
   PROG=null;
-  if(m.f) return pickFrom(all.filter(m.f),prevId);   // 指定リストの中だけで出題（尽きたら null）
+  if(m.f) return pickFrom(all.filter(m.f),prevId,m.key);   // 指定リストの中だけで出題（尽きたら null）
   const pools=[ all.filter(r=>r.status==='wrong'),
                 all.filter(r=>r.review&&r.status!=='wrong'),
                 all.filter(r=>r.status!=='correct'&&r.status!=='wrong'&&!r.review) ];
@@ -745,16 +759,27 @@ const countsHTML=(c,center)=>`<div class="cs"${center?' style="justify-content:c
     <span style="color:var(--review)">要復習 ${c.review}</span>
     <span class="muted">未出題 ${c.new}</span>
     <span style="color:var(--good)">正解 ${c.correct}</span></div>`;
+let QASK=false; // 磯部さんへの質問一覧を表示中
 async function renderQuiz(){
   if(QUIZ) return drawQuiz();
+  if(QASK) return renderAskList();
   if(QSRC) return renderQuizSrc();
   const s=await stats();
   const groups=await srcGroups();
+  const recs=await uniqRecs();
+  const nWait=recs.filter(r=>askState(r)==='wait').length, nDone=recs.filter(r=>askState(r)==='done').length;
   view.innerHTML=`<div class="${groups.length>1?'':'startpane'}"><div class="card" style="margin:0">
     <h2 class="center">何切るクイズ</h2>
     <p class="small muted center">解きたいリストを選んでください。<br>選んだリストの中だけを出題します。</p>
     <div style="margin-top:12px">${modeGridHTML(s)}</div>
     ${s.total?'':'<p class="small muted center" style="margin-top:12px">「取り込み」タブでMortalの検討URLを登録してください。</p>'}
+  </div>
+  <div class="card" style="margin:12px 0 0">
+    <h2 style="font-size:16px">磯部さんの質問クイズ</h2>
+    <p class="small muted">各問題の画面で磯部さんに質問し、もらった回答を記入すると、その回答を隠して出題します。</p>
+    <div class="cs"><span style="color:#9fb4ff">回答済み ${nDone}</span><span style="color:var(--accent2)">回答待ち ${nWait}</span></div>
+    <button class="btn-primary btn-block" id="isobe" style="margin-top:10px" ${nDone?'':'disabled'}>磯部さんの質問クイズを始める（${nDone}問）</button>
+    <button class="btn-ghost btn-block btn-sm" id="asklist" style="margin-top:8px" ${nWait+nDone?'':'disabled'}>質問の一覧・回答の記入（回答待ち ${nWait}件）</button>
   </div>
   ${groups.length?`<div class="card" style="margin:12px 0 0">
     <h2 style="font-size:16px">牌譜ごとに解く</h2>
@@ -768,6 +793,139 @@ async function renderQuiz(){
   </div>`;
   $$('.modebtn').forEach(b=>b.addEventListener('click',()=>startQuiz(b.dataset.m)));
   $$('.srcbtn').forEach(b=>b.addEventListener('click',()=>{QSRC=b.dataset.s;renderQuiz();}));
+  $('#isobe').addEventListener('click',()=>startQuiz('isobe'));
+  $('#asklist').addEventListener('click',()=>{QASK=true;renderQuiz();});
+}
+// 磯部さんへの質問の一覧（回答待ち → 回答済み）。ここから回答を記入できる
+async function renderAskList(){
+  const recs=(await uniqRecs()).filter(r=>askState(r)!=='none')
+    .sort((a,b)=>(askState(a)==='wait'?0:1)-(askState(b)==='wait'?0:1)||(b.ask.at||0)-(a.ask.at||0));
+  view.innerHTML=`<button class="btn-ghost btn-sm" id="back">← 戻る</button>
+  <div class="card" style="margin-top:10px">
+    <h2>磯部さんへの質問</h2>
+    <p class="small muted">回答が来たら、回答欄に記入して保存すると「回答済み」になり、磯部さんの質問クイズに出題されます。</p>
+  </div>
+  ${recs.length?recs.map(r=>`<div class="card">
+    <div class="row" style="gap:6px;margin-bottom:6px">
+      ${askState(r)==='wait'?'<span class="badge b-wait">回答待ち</span>':'<span class="badge b-done">回答済み</span>'}
+      <span class="small muted">${esc(srcLabel(r))} ${esc(r.st.roundText||'')} ${r.st.junme?r.st.junme+'巡目':''}・質問 ${fmtDT(r.ask.at)}</span></div>
+    ${tilesHTML((r.st.drawn?r.st.hand.concat([r.st.drawn]):r.st.hand).slice(0,14))}
+    <div class="expl">${esc(r.ask.q)}</div>
+    ${askState(r)==='wait'?`<label class="small">磯部さんの回答</label>
+      <textarea rows="3" data-a="${esc(r.id)}" placeholder="磯部さんからの回答を記入"></textarea>
+      <button class="btn-primary btn-block btn-sm" data-sa="${esc(r.id)}" style="margin-top:6px">回答を保存（回答済みにする）</button>`
+    :`<div class="mask" data-mask><div class="expl hidden-body" style="margin-top:0">${esc(r.ask.a)}</div><div class="cover"><b>磯部さんの回答</b><span>タップして見る</span></div></div>`}
+    <button class="btn-ghost btn-block btn-sm" data-op="${esc(r.id)}" style="margin-top:8px">この問題を開く</button>
+  </div>`).join(''):'<p class="small muted center">まだ質問はありません。</p>'}`;
+  $('#back').addEventListener('click',()=>{QASK=false;renderQuiz();});
+  bindMasks(view);
+  $$('[data-sa]').forEach(b=>b.addEventListener('click',async()=>{
+    const r=await dbGet(b.dataset.sa), t=$(`textarea[data-a="${CSS.escape(b.dataset.sa)}"]`).value.trim();
+    if(!t){ toast('回答を入力してください'); return; }
+    await saveAnswer(r,t); renderAskList();
+  }));
+  $$('[data-op]').forEach(b=>b.addEventListener('click',async()=>{
+    const r=await dbGet(b.dataset.op); if(!r) return;
+    QASK=false; QUIZ={rec:r,reveal:false,mode:'auto'}; drawQuiz();
+  }));
+}
+function bindMasks(root){
+  $$('[data-mask]',root).forEach(m=>m.addEventListener('click',()=>{
+    const c=m.querySelector('.cover'); if(c) c.remove();
+    const h=m.querySelector('.hidden-body'); if(h) h.classList.remove('hidden-body');
+  },{once:true}));
+}
+async function saveQuestion(r,text){
+  const now=Date.now();
+  r.ask=Object.assign({},r.ask,{q:text,at:(r.ask&&r.ask.at)||now,updatedAt:now});
+  await dbPut(r); await flush();
+  toast('「回答待ち」に入れました');
+}
+async function saveAnswer(r,text){
+  const now=Date.now();
+  r.ask=Object.assign({},r.ask,{a:text,aAt:(r.ask&&r.ask.aAt)||now,updatedAt:now});
+  await dbPut(r); await flush();
+  toast('「回答済み」に入れました');
+}
+// LINEなどで送りやすいように、局面と質問をまとめた文
+function askShareText(r){
+  const st=r.st||{}, hand=(st.hand||[]).map(tileName).join(' ');
+  return `【${st.roundText||''}${st.junme?' '+st.junme+'巡目':''}】${questionText(r)}\n手牌：${hand}${st.drawn?'　ツモ：'+tileName(st.drawn):''}\n${r.srcUrl?r.srcUrl+'\n':''}質問：${r.ask.q}`;
+}
+// 各問題の画面に出す「磯部さんに質問」欄
+function askBoxHTML(rec){
+  const s=askState(rec), ed=QUIZ.askEdit;
+  if(s==='none'||ed==='q') return `<div class="card" style="margin-top:12px">
+    <h2 style="font-size:16px">磯部さんに質問する</h2>
+    <textarea id="askq" rows="3" placeholder="例：ここは何を切るのがよかったですか？">${ed==='q'?esc(rec.ask.q):''}</textarea>
+    <button class="btn-ghost btn-block btn-sm" id="askqs" style="margin-top:6px">質問を保存（回答待ちにする）</button>
+    ${ed==='q'?'<button class="btn-ghost btn-block btn-sm" id="askcancel" style="margin-top:6px">キャンセル</button>':''}
+  </div>`;
+  const head=`<div class="row" style="gap:6px">
+      ${s==='wait'?'<span class="badge b-wait">回答待ち</span>':'<span class="badge b-done">回答済み</span>'}
+      <b style="font-size:15px">磯部さんへの質問</b><span class="grow"></span>
+      <span class="small muted">${fmtDT(rec.ask.at)}</span></div>
+    <div class="expl">${esc(rec.ask.q)}</div>`;
+  if(s==='wait'||ed==='a') return `<div class="card" style="margin-top:12px">${head}
+    <div class="row" style="margin-top:6px">
+      <button class="btn-ghost btn-sm grow" id="askcopy">質問文をコピー</button>
+      <button class="btn-ghost btn-sm" id="askqe">質問を編集</button>
+      <button class="btn-ghost btn-sm" id="askdel">取り消し</button></div>
+    <label class="small">磯部さんの回答（回答が来たら記入）</label>
+    <textarea id="aska" rows="3" placeholder="磯部さんからの回答を記入">${ed==='a'?esc(rec.ask.a):''}</textarea>
+    <button class="btn-primary btn-block btn-sm" id="askas" style="margin-top:6px">回答を保存（回答済みにする）</button>
+  </div>`;
+  return `<div class="card" style="margin-top:12px">${head}
+    <div class="mask" data-mask><div class="expl hidden-body" style="margin-top:0">${esc(rec.ask.a)}</div>
+      <div class="cover"><b>磯部さんの回答</b><span>タップして見る</span></div></div>
+    <button class="btn-ghost btn-block btn-sm" id="askae" style="margin-top:8px">回答を編集</button>
+  </div>`;
+}
+function bindAskBox(rec){
+  const on=(id,fn)=>{ const e=$('#'+id); if(e) e.addEventListener('click',fn); };
+  bindMasks($('#askbox'));
+  on('askqs',async()=>{ const t=$('#askq').value.trim(); if(!t){ toast('質問を入力してください'); return; }
+    await saveQuestion(rec,t); QUIZ.askEdit=null; drawQuiz(); });
+  on('askcancel',()=>{ QUIZ.askEdit=null; drawQuiz(); });
+  on('askqe',()=>{ QUIZ.askEdit='q'; drawQuiz(); });
+  on('askae',()=>{ QUIZ.askEdit='a'; drawQuiz(); });
+  on('askdel',async()=>{ if(!confirm('この質問を取り消しますか？')) return; delete rec.ask; await dbPut(rec); await flush(); drawQuiz(); });
+  on('askas',async()=>{ const t=$('#aska').value.trim(); if(!t){ toast('回答を入力してください'); return; }
+    await saveAnswer(rec,t); QUIZ.askEdit=null; drawQuiz(); });
+  on('askcopy',async()=>{ try{ await navigator.clipboard.writeText(askShareText(rec)); toast('コピーしました'); }
+    catch(e){ prompt('コピーしてください',askShareText(rec)); } });
+}
+// 磯部さんの質問クイズ：質問と局面を見て、磯部さんの回答を思い出す
+function drawIsobe(){
+  const {rec,reveal}=QUIZ, q=rec.q, a=rec.ask;
+  view.innerHTML=`
+    <div class="row" style="margin-bottom:8px"><span class="badge b-done">回答済み</span>
+      <span class="chip">${esc(MODES.isobe.label)}</span><span class="grow"></span>
+      <span class="small muted">◯${a.ok||0} / ✕${a.ng||0}</span></div>
+    <div class="boardwrap">${boardSVG(rec,reveal)}</div>
+    <div class="expl"><span class="small muted">磯部さんへの質問（${fmtDT(a.at)}）</span><br>${esc(a.q)}</div>
+    ${reveal?`<div class="expl" style="border-color:#5b6fc4"><b>磯部さんの回答</b><br>${esc(a.a)}</div>
+      <div class="small muted" style="margin-top:8px">参考：Mortalの推奨 ${esc(q.answerText||tileName(q.answer))}／実戦 ${esc(q.actualText||tileName(q.actual))}</div>`
+    :`<div class="mask" id="imask"><div class="expl hidden-body" style="margin-top:0">${esc(a.a)}</div><div class="cover"><b>磯部さんの回答</b><span>思い出してからタップ</span></div></div>`}
+    <div id="act" style="margin-top:12px"></div>`;
+  const act=$('#act');
+  if(!reveal){
+    $('#imask').addEventListener('click',()=>{QUIZ.reveal=true;drawQuiz();});
+    act.innerHTML=`<div class="row"><button class="btn-ghost grow btn-sm" id="skip">スキップ</button>
+      <button class="btn-ghost btn-sm" id="quit">終了</button></div>`;
+  } else {
+    act.innerHTML=`<div class="row">
+        <button class="btn-primary grow" id="iok">◯ 覚えてた</button>
+        <button class="btn-danger grow" id="ing">✕ 覚えてなかった</button></div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn-ghost grow" id="skip">次の問題へ（採点しない）</button>
+        <button class="btn-ghost" id="quit">終了</button></div>`;
+    const grade=async ok=>{ a[ok?'ok':'ng']=(a[ok?'ok':'ng']||0)+1; a.last=Date.now(); a.updatedAt=Date.now(); await dbPut(rec); next(); };
+    $('#iok').addEventListener('click',()=>grade(true));
+    $('#ing').addEventListener('click',()=>grade(false));
+  }
+  $('#skip').addEventListener('click',next);
+  $('#quit').addEventListener('click',()=>{QUIZ=null;renderQuiz();});
 }
 // 牌譜1つ分の中でリストを選ぶ画面
 async function renderQuizSrc(){
@@ -816,6 +974,7 @@ function candListHTML(q){
       <div class="small muted" style="width:52px;text-align:right">${(c.prob*100).toFixed(1)}%</div></div>`).join('')+`</div>`;
 }
 function drawQuiz(){
+  if(QUIZ.mode==='isobe') return drawIsobe();
   const {rec,reveal}=QUIZ, q=rec.q, st=rec.st;
   view.innerHTML=`
     <div class="row" style="margin-bottom:8px">${poolLabel(rec)}
@@ -825,8 +984,10 @@ function drawQuiz(){
     <div class="boardwrap">${boardSVG(rec,reveal)}</div>
     <div id="ans"></div>
     <div id="act" style="margin-top:12px"></div>
-    <div id="det"></div>`;
+    <div id="det"></div>
+    <div id="askbox">${askBoxHTML(rec)}</div>`;
   const act=$('#act'), ans=$('#ans'), det=$('#det');
+  bindAskBox(rec);
   if(!reveal){
     act.innerHTML=`<button class="btn-primary btn-block" id="show">答えを見る</button>
       <div class="row" style="margin-top:8px">
@@ -1302,6 +1463,7 @@ async function renderList(){
         <div class="row" style="gap:6px;margin-bottom:4px">
           ${r.status==='wrong'?'<span class="badge b-wrong">不正解</span>':r.status==='correct'?'<span class="badge b-correct">正解</span>':'<span class="badge b-new">未出題</span>'}
           ${r.review?'<span class="badge b-review">要復習</span>':''}
+          ${askState(r)==='wait'?'<span class="badge b-wait">回答待ち</span>':askState(r)==='done'?'<span class="badge b-done">回答済み</span>':''}
           <span class="badge b-kind">${r.q.kind==='call'?'鳴き':r.q.kind==='riichi'?'リーチ':'何切る'}</span>
           <span class="small muted">${esc(r.st.roundText||'')} ${r.st.junme?r.st.junme+'巡目':''}</span>
         </div>
