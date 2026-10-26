@@ -8,7 +8,7 @@ const esc=UI.esc;
 const HUMAN=0; let CPU_MS=300;
 const ABORT={abort:true};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const VERSION='2026-10-26f';
+const VERSION='2026-10-26g';
 
 /* ================= 設定 ================= */
 const CFG_KEY='ml.cfg.v1';

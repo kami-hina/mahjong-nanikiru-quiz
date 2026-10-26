@@ -1,7 +1,7 @@
 /* オフライン対応（機内モードでも動くように、アプリ一式を端末に保存する）
    ・HTML・JS: 通信できればネットから最新を取り、できなければ（機内モードなど）保存済みを使う
    ・牌画像: 保存済みを使う（無ければネットから取って保存） */
-const CACHE='mahjong-app-v2026-10-26f';
+const CACHE='mahjong-app-v2026-10-26g';
 const ASSETS=[
   "./","index.html","play.html","isobe.html","qa.js","icon.svg","manifest.json","play-manifest.json",
   "local/mj-core.js","local/mj-ai.js","local/ai-weights.js","local/mj-game.js","local/store.js","local/ui-common.js","local/tenhou-export.js","local/review-data.js","local/play.js",
