@@ -51,41 +51,56 @@ img.tile{display:block;width:100%;height:auto;background:#f2f0ea;border-radius:1
 select,textarea,input{font:inherit;width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:#06170f;color:var(--fg);-webkit-user-select:text;user-select:text}
 label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
 .seg{display:flex;gap:6px}.seg button{flex:1;font-size:13px}.seg button.on{background:var(--accent);color:#04241a}
-/* ---------- 対局画面 ---------- */
-#game{overflow:hidden}
-#g-wrap{position:absolute;display:flex}
-#g-wrap.portrait{flex-direction:column}
-#g-wrap.landscape{flex-direction:row}
-#g-board{position:relative;flex:none;background:#0e3b2a}
+/* ---------- 対局画面（天鳳の配置に合わせる: 縦=卓→手牌→操作ボタン、横=中央の卓＋画面下いっぱいの手牌） ---------- */
+#game{overflow:hidden;background:#000}
+#g-wrap{position:absolute}
+#g-wrap>*{position:absolute}
+#g-board{background:#0b2140;overflow:hidden}
 #g-board svg{display:block;width:100%;height:100%}
-#g-side{position:relative;flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
-#g-acts{flex:none;display:flex;gap:6px;align-items:center;justify-content:flex-end;padding:4px 6px;min-height:52px}
-#g-acts .msg{flex:1;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#g-acts button{min-width:62px;font-size:15px}
-.a-hora{background:#d63b3b;color:#fff}.a-reach{background:#d98a1c;color:#fff}.a-call{background:#2c6ed6;color:#fff}.a-skip{background:#4a5a55}
-#g-hand{flex:none;display:flex;align-items:flex-end;justify-content:center;padding:10px 4px 6px;gap:0}
+#g-msg{font-size:13px;color:#d6e4f7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;text-shadow:0 1px 3px #000;z-index:6}
+#g-acts{display:flex;gap:8px;align-items:flex-end;justify-content:flex-end;flex-wrap:wrap;z-index:7;pointer-events:none}
+#g-acts button{pointer-events:auto}
+#g-acts button{min-width:78px;min-height:54px;font-size:19px;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,.55)}
+.a-hora{background:#d63b3b;color:#fff}.a-reach{background:#d98a1c;color:#fff}.a-call{background:#2c6ed6;color:#fff}.a-skip{background:#3d4a5e;color:#fff}
+#g-hand{display:flex;align-items:flex-end;justify-content:center;z-index:5;pointer-events:none}
+#g-hand .ht,#g-hand .hm{pointer-events:auto}
 .ht{position:relative;flex:none;width:var(--tw);transition:transform .08s}
-.ht.sel{transform:translateY(-9px)}
+.ht::after{content:'';position:absolute;left:0;right:0;top:-16px;bottom:calc(var(--hitb,12px)*-1)}
+.ht.sel{transform:translateY(calc(var(--tw)*-0.3))}
 .ht.gap{margin-left:calc(var(--tw)*0.35)}
 .ht.ng img{filter:brightness(.55)}
-.ht.ok img{box-shadow:inset 0 0 0 2px var(--gold)}
-.ht .ub{position:absolute;left:0;right:0;bottom:100%;text-align:center;font-size:10px;color:var(--gold);line-height:1.1}
-#g-tools{flex:none;display:grid;grid-template-columns:repeat(3,1fr);gap:5px;padding:4px 6px}
-#g-tools button{font-size:11.5px;line-height:1.2;padding:4px 4px;min-height:44px;font-weight:700}
+.ht .ub{position:absolute;left:0;right:0;bottom:100%;text-align:center;font-size:10px;color:var(--gold);line-height:1.1;text-shadow:0 1px 2px #000}
+.hm{display:flex;align-items:flex-end;margin-left:calc(var(--tw)*0.3);gap:1px}
+.hm .mt{width:calc(var(--tw)*0.72);flex:none}
+.hm .mt.side{width:calc(var(--tw)*0.72*1.3);display:flex;align-items:flex-end}
+.hm .mt.side img{transform:rotate(90deg) translateX(-12%);transform-origin:center}
+.hm .gapm{width:calc(var(--tw)*0.2)}
+#g-menubtn{z-index:9;min-width:66px;min-height:46px;padding:4px 10px;font-size:13px;background:rgba(8,18,36,.78);border:1px solid #5b7aa8;color:#e8f0ff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+#g-menubtn.on{background:#2c6ed6;border-color:#8fb4ff}
+#g-menu{z-index:30;display:none;background:rgba(6,12,24,.97);border:1px solid #3a5a88;border-radius:14px;padding:10px;overflow:auto;-webkit-overflow-scrolling:touch;box-shadow:0 8px 30px rgba(0,0,0,.6)}
+#g-menu.on{display:block}
+#g-menu .mh{display:flex;align-items:center;margin-bottom:8px}
+#g-menu .mh b{flex:1;font-size:15px}
+#g-tools{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+#g-tools button{font-size:12.5px;line-height:1.25;padding:4px;min-height:54px}
 #g-tools button.on{background:var(--accent);color:#04241a}
-#g-info{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:4px 8px 8px;min-height:0;font-size:13px}
+#g-info{overflow:auto;-webkit-overflow-scrolling:touch;z-index:8;font-size:13px;padding:4px 6px}
+#g-info.float{background:rgba(6,12,24,.93);border:1px solid #3a5a88;border-radius:12px}
+#g-info:empty{display:none}
 .ipanel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;margin-bottom:8px}
-.ipanel h3{margin:0 0 4px;font-size:13px}
+.ipanel h3{margin:0 0 4px;font-size:13px;display:flex;align-items:center;gap:6px}
+.ipanel h3 span{flex:1}
+.ipanel h3 button{min-height:34px;min-width:44px;padding:2px 8px;font-size:13px}
 .trow{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.06)}
 .trow .tw{width:20px}
 .trow .tw.big{width:24px}
 .chip{display:inline-block;border-radius:6px;padding:1px 6px;margin:2px;font-size:12px;background:#1d4436}
 .chip.on{background:#1f7a52}.chip.off{background:#4a2121;color:#ffd0d0;text-decoration:line-through}
-/* オーバーレイ（#g-side を覆う。卓は見えたまま） */
-.ov{position:absolute;inset:0;z-index:20;background:#04120d;display:flex;flex-direction:column}
+/* オーバーレイ（FALSE・ヒント・メモ・局の結果）: 縦は手牌から下、横は右側に出して卓は見えたまま */
+.ov{position:absolute;z-index:40;background:#05101e;display:flex;flex-direction:column;box-shadow:0 0 24px rgba(0,0,0,.7)}
 .ov .ovb{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:10px 12px}
-.ov .ovf{flex:none;display:flex;gap:8px;padding:8px 10px calc(8px)}
-.ov .ovf button{flex:1;font-size:16px;min-height:50px}
+.ov .ovf{flex:none;display:flex;gap:8px;padding:8px 10px}
+.ov .ovf button{flex:1;font-size:16px;min-height:52px}
 .false{font-size:34px;font-weight:900;color:var(--bad);letter-spacing:2px;line-height:1}
 .okmark{font-size:22px;font-weight:900;color:var(--accent)}
 /* Mortal 風の候補一覧 */
@@ -140,12 +155,12 @@ table.suji td.ans-on{background:rgba(61,220,151,.18)}
   <section id="game" class="screen">
     <div id="g-wrap">
       <div id="g-board"></div>
-      <div id="g-side">
-        <div id="g-acts"></div>
-        <div id="g-hand"></div>
-        <div id="g-tools"></div>
-        <div id="g-info"></div>
-      </div>
+      <div id="g-info"></div>
+      <div id="g-msg"></div>
+      <div id="g-acts"></div>
+      <div id="g-hand"></div>
+      <button id="g-menubtn">メニュー</button>
+      <div id="g-menu"><div class="mh"><b>メニュー</b><button id="g-menuclose" class="btn-g" style="min-height:40px">閉じる</button></div><div id="g-tools"></div></div>
     </div>
   </section>
   <!-- 牌譜一覧・ビューア・要チェック・設定 -->

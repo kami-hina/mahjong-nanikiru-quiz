@@ -18,8 +18,9 @@ function put(t,x,y,w,o){
   o=o||{};
   const h=w*TILE_AR, p=w*0.06, iw=w-2*p, ih=iw*4/3, r=w*0.12;
   let s=`<g transform="translate(${x.toFixed(1)},${y.toFixed(1)})${o.rot?` rotate(${o.rot} ${(w/2).toFixed(1)} ${(h/2).toFixed(1)})`:''}"${o.op?` opacity="${o.op}"`:''}>`;
-  if(t==='back'){ s+=`<rect width="${w}" height="${h}" rx="${r}" fill="#d9a441" stroke="rgba(0,0,0,.35)" stroke-width="${Math.max(.6,w*0.03)}"/>`
-    +`<rect x="${w*0.12}" y="${h*0.1}" width="${w*0.76}" height="${h*0.8}" rx="${r*0.7}" fill="#e8b85a"/>`; }
+  if(t==='back'){ s+=`<rect width="${w}" height="${h}" rx="${r}" fill="#ece8de" stroke="rgba(0,0,0,.45)" stroke-width="${Math.max(.6,w*0.03)}"/>`
+    +`<rect x="${w*0.04}" y="${h*0.03}" width="${w*0.92}" height="${h*0.74}" rx="${r*0.8}" fill="#161618"/>`
+    +`<rect x="${w*0.1}" y="${h*0.07}" width="${w*0.8}" height="${h*0.08}" rx="${r*0.4}" fill="rgba(255,255,255,.12)"/>`; }
   else s+=`<rect width="${w}" height="${h}" rx="${r}" fill="${o.dark?'#bfb3a6':'#f2f0ea'}" stroke="rgba(0,0,0,.35)" stroke-width="${Math.max(.6,w*0.03)}"/>`
     +`<image href="${tileURL(t)}" x="${p}" y="${p}" width="${iw}" height="${ih}"${o.dark?' opacity=".78"':''}/>`;
   if(o.ring) s+=`<rect x="-2" y="-2" width="${w+4}" height="${h+4}" rx="${r+2}" fill="none" stroke="${o.ring}" stroke-width="${Math.max(2.5,w*0.1)}"/>`;
@@ -96,33 +97,47 @@ function handSVG(v,seat,open,showDrawn){
 function boardSVG(v,opt){
   opt=opt||{};
   let s=`<svg class="board" viewBox="0 0 ${V} ${V}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">`;
-  s+=`<rect width="${V}" height="${V}" fill="#0e3b2a"/>`;
-  s+=`<rect x="${C-90}" y="${C-90}" width="180" height="180" rx="10" fill="#0a2a1e" stroke="#2f6b4f" stroke-width="2"/>`;
+  // 天鳳のような紺色の卓（中央が明るいグラデーション＋うっすらした模様）
+  s+=`<defs><radialGradient id="felt" cx="50%" cy="46%" r="72%"><stop offset="0" stop-color="#25508c"/><stop offset=".6" stop-color="#173a69"/><stop offset="1" stop-color="#0c2142"/></radialGradient>`
+    +`<linearGradient id="cbar" x1="0" x2="1"><stop offset="0" stop-color="#1f8f3a"/><stop offset=".5" stop-color="#3fd06a"/><stop offset="1" stop-color="#1f8f3a"/></linearGradient></defs>`;
+  s+=`<rect width="${V}" height="${V}" fill="url(#felt)"/>`;
+  s+=`<path d="M0 ${V*0.3} C ${V*0.3} ${V*0.22}, ${V*0.55} ${V*0.42}, ${V} ${V*0.33} M0 ${V*0.72} C ${V*0.35} ${V*0.62}, ${V*0.6} ${V*0.86}, ${V} ${V*0.7}" stroke="rgba(255,255,255,.035)" stroke-width="40" fill="none"/>`;
+  s+=`<rect x="${C-90}" y="${C-90}" width="180" height="180" rx="6" fill="rgba(8,8,10,.9)" stroke="rgba(255,255,255,.18)" stroke-width="1.5"/>`;
   for(let r=0;r<4;r++){
     const seat=(v.me+r)%4;
     let g=`<g transform="rotate(${-90*r} ${C} ${C})">`;
     const hl=(opt.hl&&opt.hl.seat===seat)? opt.hl : null;
+    // 名札（各家の左手前の角。天鳳の名前表示の位置）
+    if(opt.plates!==false){ const nm=(v.names&&v.names[seat])||REL[r];
+      g+=`<rect x="${C+114}" y="${C+102}" width="104" height="62" rx="6" fill="rgba(255,255,255,.07)" stroke="rgba(255,255,255,.12)"/>`
+        +`<text x="${C+166}" y="${C+134}" text-anchor="middle" font-size="20" font-weight="700" fill="rgba(235,242,255,.62)" font-family="serif">${esc(nm.length>5?nm.slice(0,5):nm)}</text>`
+        +`<text x="${C+166}" y="${C+154}" text-anchor="middle" font-size="11" fill="rgba(235,242,255,.45)" font-family="sans-serif">${r===0?'YOU':'COM'}</text>`; }
     g+=riverSVG(v.rivers[seat]||[],hl);
     if(!(opt.skipHand&&opt.skipHand[seat])) g+=handSVG(v,seat,!!(opt.open&&opt.open[seat]));
-    g+=meldsSVG(v.melds[seat]||[],seat,ROW_R,HAND_Y)[0];
+    if(!(opt.skipMelds&&opt.skipMelds[seat])) g+=meldsSVG(v.melds[seat]||[],seat,ROW_R,HAND_Y)[0];
     // 中央の点数（各自の向き）
     const wind=WIND[(seat-v.oya+4)%4];
     const isOya=seat===v.oya;
     const sc=v.scores[seat];
-    g+=`<text x="${C}" y="${C+82}" text-anchor="middle" font-size="18" font-weight="700" fill="${r===0?'#ffd166':'#e6f2ec'}" font-family="sans-serif">`
-      +`<tspan fill="${isOya?'#ff8a8a':'#9fd3b8'}">${wind}</tspan> ${sc}</text>`;
+    const hund=Math.trunc(sc/100), tail=String(Math.abs(sc)%100).padStart(2,'0');
+    g+=`<text x="${C}" y="${C+80}" text-anchor="middle" font-size="21" fill="${r===0?'#ffffff':'#e8e8e8'}" font-family="'Times New Roman',serif">`
+      +`<tspan fill="${isOya?'#ff7b7b':'#d9d9d9'}" font-size="18">${wind}</tspan> ${hund}<tspan font-size="12" fill="#9a9a9a">${tail}</tspan></text>`;
     if(v.riichi&&v.riichi[seat]) g+=`<rect x="${C-34}" y="${C+52}" width="68" height="7" rx="3.5" fill="#f4f4f4"/><circle cx="${C}" cy="${C+55.5}" r="2.6" fill="#d22"/>`;
-    if(v.last&&v.last.actor===seat&&opt.turnMark!==false) g+=`<rect x="${C-50}" y="${C+86}" width="100" height="3" rx="1.5" fill="#ffd166"/>`;
+    if(v.last&&v.last.actor===seat&&opt.turnMark!==false) g+=`<rect x="${C-84}" y="${C+84}" width="168" height="4" rx="2" fill="url(#cbar)"/>`;
     g+='</g>';
     s+=g;
   }
   // 中央
-  const round=WIND[v.bakaze]+v.kyoku+'局';
-  s+=`<text x="${C}" y="${C-30}" text-anchor="middle" font-size="21" font-weight="800" fill="#fff" font-family="sans-serif">${round}</text>`;
-  s+=`<text x="${C}" y="${C-12}" text-anchor="middle" font-size="12" fill="#bfe3d0" font-family="sans-serif">${v.honba}本場 供託${v.kyotaku}</text>`;
-  const dn=Math.min(5,v.dora.length), dw=19, dx=C-(5*dw)/2;
-  for(let i=0;i<5;i++) s+= i<dn? put(v.dora[i],dx+i*dw,C-4,dw-1) : put('back',dx+i*dw,C-4,dw-1);
-  s+=`<text x="${C}" y="${C+40}" text-anchor="middle" font-size="12" fill="#bfe3d0" font-family="sans-serif">残り ${v.left}</text>`;
+  // ドラ表示（中央パネルの上段）
+  const dn=Math.min(5,v.dora.length), dw=16, dx=C-(5*dw)/2;
+  for(let i=0;i<5;i++) s+= i<dn? put(v.dora[i],dx+i*dw,C-47,dw-1) : put('back',dx+i*dw,C-47,dw-1);
+  // 局（場風を青で）
+  s+=`<text x="${C}" y="${C+8}" text-anchor="middle" font-size="28" fill="#f2f2f2" font-family="'Times New Roman',serif"><tspan fill="#5d86ff">${WIND[v.bakaze]}</tspan>${v.kyoku}<tspan fill="#9a9a9a" font-size="22">局</tspan></text>`;
+  // 残り枚数・本場・供託
+  const stick=(x,col)=>`<rect x="${x}" y="${C+19}" width="5" height="12" rx="1" fill="#f0f0f0"/><circle cx="${x+2.5}" cy="${C+25}" r="1.6" fill="${col}"/>`;
+  s+=`<text x="${C-26}" y="${C+30}" text-anchor="end" font-size="14" fill="#e0e0e0" font-family="'Times New Roman',serif">${v.left}</text>`
+    +stick(C-18,'#333')+`<text x="${C-9}" y="${C+30}" font-size="14" fill="#e0e0e0" font-family="'Times New Roman',serif">${v.honba}</text>`
+    +stick(C+10,'#d22')+`<text x="${C+19}" y="${C+30}" font-size="14" fill="#e0e0e0" font-family="'Times New Roman',serif">${v.kyotaku}</text>`;
   if(opt.label) s+=`<text x="${C}" y="${V-6}" text-anchor="middle" font-size="16" fill="#ffd166" font-family="sans-serif">${esc(opt.label)}</text>`;
   return s+'</svg>';
 }

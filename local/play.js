@@ -8,7 +8,7 @@ const esc=UI.esc;
 const HUMAN=0; let CPU_MS=300;
 const ABORT={abort:true};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const VERSION='2026-10-26g';
+const VERSION='2026-10-26h';
 
 /* ================= 設定 ================= */
 const CFG_KEY='ml.cfg.v1';
@@ -43,27 +43,55 @@ function applyLayout(){
   $$('.screen').forEach(s=>{ s.style.paddingTop=pad.t+'px'; s.style.paddingBottom=pad.b+'px'; s.style.paddingLeft=pad.l+'px'; s.style.paddingRight=pad.r+'px'; });
   layoutGame();
 }
-let TW=28;
+let TW=28, GL=null;
+/* 対局画面の配置（天鳳のスマホ版に合わせる）
+   縦: 卓（画面幅の正方形）→ その真下に画面幅いっぱいの手牌 → 操作ボタン → 情報パネル
+   横: 卓を中央に置き、手牌は画面下に横幅いっぱい（卓の下端に重ねる）。メニューは右下、情報パネルは左に浮かせる */
 function layoutGame(){
   const w=LAY.W-LAY.pad.l-LAY.pad.r, h=LAY.H-LAY.pad.t-LAY.pad.b;
   const wrap=$('#g-wrap'); if(!wrap) return;
   wrap.style.left=LAY.pad.l+'px'; wrap.style.top=LAY.pad.t+'px'; wrap.style.width=w+'px'; wrap.style.height=h+'px';
   wrap.className=LAY.land?'landscape':'portrait';
-  const board=$('#g-board');
-  let B, sideW;
+  let L;
   if(!LAY.land){
-    TW=Math.max(20,Math.min(54,Math.floor((w-8)/14.6)));
-    const sideMin=52+(TW*1.34+18)+(3*49+10)+80;
-    B=Math.max(200,Math.min(w,h-sideMin));
-    sideW=w;
+    TW=Math.max(20,Math.min(60,Math.floor((w-4)/14.35)));
+    const handH=Math.round(TW*44/34)+24;
+    const B=Math.max(220,Math.min(w,h-handH-70));
+    const bx=Math.round((w-B)/2), y=B+handH;
+    L={land:false,B,handH,
+      board:{left:bx,top:0,width:B,height:B},
+      hand:{left:0,top:B,width:w,height:handH},
+      msg:{left:8,top:y+2,width:w-16,height:18},
+      acts:{left:6,top:y+22,width:w-12,height:62},
+      info:{left:0,top:y+88,width:w,height:Math.max(40,h-(y+88))},
+      menubtn:{left:bx+B-76,top:B-52},
+      menu:{left:6,top:y+4,width:w-12,height:null,maxH:h-y-8},
+      ov:{left:0,top:B,width:w,height:h-B}};
   } else {
-    B=Math.max(200,Math.min(h,w-300));
-    sideW=w-B;
-    TW=Math.max(18,Math.min(46,Math.floor((sideW-10)/14.6)));
+    TW=Math.max(22,Math.min(58,Math.floor((w-12)/14.8)));
+    const handH=Math.round(TW*44/34)+16;
+    const B=Math.max(200,Math.min(h,Math.floor((h-handH+8)/0.87),Math.floor(w*0.62)));
+    const bx=Math.round((w-B)/2), side=bx;
+    const ovW=Math.min(500,Math.max(330,Math.round(w*0.52)));
+    const mW=Math.min(380,Math.round(w*0.46));
+    L={land:true,B,handH,
+      board:{left:bx,top:0,width:B,height:B},
+      hand:{left:0,top:h-handH,width:w,height:handH},
+      msg:{left:bx+8,top:h-handH-24,width:Math.round(B*0.5),height:20},
+      acts:{left:bx+Math.round(B*0.3),top:h-handH-70,width:Math.round(B*0.7)-4,height:64},
+      info:{left:4,top:4,width:Math.min(400,Math.max(side-8,300)),height:h-handH-12},
+      menubtn: side>=84? {left:w-side+Math.round((side-72)/2),top:h-handH-58} : {left:bx+B-78,top:h-handH-58},
+      menu:{left:w-mW-4,top:4,width:mW,height:null,maxH:h-handH-12},
+      ov:{left:w-ovW,top:0,width:ovW,height:h}};
   }
-  board.style.width=B+'px'; board.style.height=B+'px';
-  if(!LAY.land) board.style.margin='0 auto'; else board.style.margin='0';
+  const set=(sel,r)=>{ const el=$(sel); if(!el||!r) return; ['left','top','width','height'].forEach(k=>{ el.style[k]= r[k]==null? '' : r[k]+'px'; }); };
+  $('#g-menu').style.maxHeight=(L.menu.maxH||0)+'px';
+  wrap.style.setProperty('--hitb',(L.land?8:42)+'px');
+  set('#g-board',L.board); set('#g-hand',L.hand); set('#g-msg',L.msg); set('#g-acts',L.acts); set('#g-info',L.info); set('#g-menubtn',L.menubtn); set('#g-menu',L.menu);
+  const ov=$('#ov'); if(ov) set('#ov',L.ov);
+  $('#g-info').classList.toggle('float',L.land);
   document.documentElement.style.setProperty('--tw',TW+'px');
+  GL=L;
 }
 window.addEventListener('resize',()=>{ applyLayout(); if(SCREEN==='game') renderGame(); });
 window.addEventListener('orientationchange',()=>setTimeout(()=>{ applyLayout(); if(SCREEN==='game') renderGame(); },250));
@@ -148,7 +176,7 @@ function AI_INFO(){ const m=window.MJ_AI_WEIGHTS&&window.MJ_AI_WEIGHTS.meta; ret
 
 /* ================= 対局の開始・再開・保存 ================= */
 let G=null, REC=null, PEND=null, LOOPING=false, SEL=-1, RSEL=false, PRESEL=null, SUBMENU=null;
-let UIS={shanten:false,suji:false,sujiTable:false,open:false,resultOpen:false};
+let UIS={shanten:false,suji:false,sujiTable:false,open:false,resultOpen:false,menu:false};
 let STUDY={}; // スジカウント表（局ごと・相手ごと）
 function newId(){ return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7); }
 async function newGame(){
@@ -157,14 +185,14 @@ async function newGame(){
   G=new Game({seed:(Math.random()*2147483647)|0,names:CFG.names.slice()});
   REC={id:newId(),createdAt:Date.now(),names:CFG.names.slice(),seed:G.seed,decisions:[],memos:[],finished:false,result:null,log:G.log};
   G.startKyoku();
-  UIS={shanten:false,suji:false,sujiTable:false,open:false,resultOpen:false}; STUDY={};
+  UIS={shanten:false,suji:false,sujiTable:false,open:false,resultOpen:false,menu:false}; STUDY={};
   await persist(true);
   startPlay();
 }
 async function resumeGame(cur){
   try{ G=Game.fromJSON(cur.game); }catch(e){ alert('対局データを復元できませんでした: '+e.message); return; }
   REC=cur.rec; REC.log=G.log;
-  UIS={shanten:false,suji:false,sujiTable:false,open:false,resultOpen:false}; STUDY={};
+  UIS={shanten:false,suji:false,sujiTable:false,open:false,resultOpen:false,menu:false}; STUDY={};
   startPlay();
 }
 function kyokuLabel(){ return G? UI.WIND[G.bakaze]+G.kyoku+'局 '+G.honba+'本場' : ''; }
@@ -323,7 +351,7 @@ function renderGame(){
   const open=[false,UIS.open||UIS.resultOpen,UIS.open||UIS.resultOpen,UIS.open||UIS.resultOpen];
   let hl=null;
   if(K.lastDiscard){ const r=K.rivers[K.lastDiscard.actor]; if(r.length) hl={seat:K.lastDiscard.actor,idx:r.length-1,color:PEND&&PEND.kind==='react'?'#ff4d4d':'#ffd166'}; }
-  $('#g-board').innerHTML=UI.boardSVG(v,{open,skipHand:[true,false,false,false],hl});
+  $('#g-board').innerHTML=UI.boardSVG(v,{open,skipHand:[true,false,false,false],skipMelds:[true,false,false,false],hl});
   renderHand(); renderActs(); renderTools(); renderInfo();
 }
 function myHandOrder(){
@@ -356,7 +384,23 @@ function renderHand(){
   }).join('')+meldsHTML();
   $$('#g-hand .ht').forEach(el=>el.onclick=()=>tapTile(+el.dataset.i));
 }
-function meldsHTML(){ return ''; } // 自分の副露は卓（SVG）の手前に表示
+// 自分の副露は手牌の右に並べる（鳴いた牌は横向き。上家から=左、対面から=真ん中、下家から=右）
+function meldsHTML(){
+  const ms=(G.k.melds&&G.k.melds[HUMAN])||[]; if(!ms.length) return '';
+  const img=(t,side)=>`<span class="mt${side?' side':''}">${UI.tileImg(t)}</span>`;
+  return `<div class="hm">`+ms.map((m,mi)=>{
+    let h='';
+    if(m.type==='ankan'){ h=img('back')+img(m.tiles[1])+img(m.tiles[2])+img('back'); }
+    else {
+      const base=m.type==='kakan'? m.tiles.slice(0,3) : m.tiles.slice();
+      const called=m.pai||base[base.length-1]; const ci=base.lastIndexOf(called); const rest=base.slice(); if(ci>=0) rest.splice(ci,1);
+      rest.sort((a,b)=>MJ.tkey(a)-MJ.tkey(b));
+      const rel=(m.from-HUMAN+4)%4; const pos= rel===3?0 : rel===2?1 : rest.length;
+      const seq=rest.map(t=>img(t,false)); seq.splice(pos,0,img(called,true)+(m.type==='kakan'?img(m.tiles[3],true):''));
+      h=seq.join('');
+    }
+    return (mi?'<span class="gapm"></span>':'')+h; }).join('')+`</div>`;
+}
 function tapTile(i){
   const {tiles}=myHandOrder(); const t=tiles[i];
   const allow=allowedDiscards();
@@ -401,7 +445,8 @@ function renderActs(){
   } else {
     const t=K.turn; msg= t===HUMAN? '' : (UI.REL[(t-HUMAN+4)%4]+'の番');
   }
-  box.innerHTML=`<div class="msg">${esc(msg)}</div>`+btns.join('');
+  $('#g-msg').textContent=msg;
+  box.innerHTML=btns.join('');
   $$('#g-acts [data-t]').forEach(b=>b.onclick=()=>actButton(b.dataset.t));
   $$('#g-acts [data-sub]').forEach(b=>b.onclick=()=>{ const a=SUBMENU[+b.dataset.sub]; SUBMENU=null; choose(a); });
   $$('#g-acts [data-x]').forEach(b=>b.onclick=()=>{ if(b.dataset.x==='back'){ SUBMENU=null; } if(b.dataset.x==='rcancel'){ RSEL=false; } renderGame(); });
@@ -421,21 +466,28 @@ function actButton(t){
 const _choose=choose;
 
 /* ---------- ツール ---------- */
+/* 9つの機能はメニューに集約（初期は非表示。「メニュー」ボタンで開く） */
 function renderTools(){
   const b=(id,label,on)=>`<button id="${id}" class="${on?'on':''}">${label}</button>`;
   $('#g-tools').innerHTML=
     b('t-hint','正解が<br>わからない',false)+b('t-memo','メモ記入',false)+b('t-sh','シャンテン数<br>＆待ち表示',UIS.shanten)+
     b('t-suji','今スジが何本<br>通っているか？',UIS.suji)+b('t-sujit','スジカウント表',UIS.sujiTable)+b('t-open','相手の手牌<br>OPEN',UIS.open)+
-    b('t-port','縦画面モード',CFG.mode==='portrait')+b('t-land','横画面モード',CFG.mode==='landscape')+b('t-menu','メニュー',false);
-  $('#t-hint').onclick=showHint;
-  $('#t-memo').onclick=showMemo;
-  $('#t-sh').onclick=()=>{ UIS.shanten=!UIS.shanten; renderGame(); };
-  $('#t-suji').onclick=()=>{ UIS.suji=!UIS.suji; renderGame(); };
-  $('#t-sujit').onclick=()=>{ UIS.sujiTable=!UIS.sujiTable; renderGame(); };
-  $('#t-open').onclick=()=>{ UIS.open=!UIS.open; renderGame(); };
-  $('#t-port').onclick=()=>{ CFG.mode='portrait'; saveCfg(); applyLayout(); renderGame(); };
-  $('#t-land').onclick=()=>{ CFG.mode='landscape'; saveCfg(); applyLayout(); renderGame(); };
-  $('#t-menu').onclick=showMenu;
+    b('t-port','縦画面モード',CFG.mode==='portrait')+b('t-land','横画面モード',CFG.mode==='landscape')+b('t-menu','中断・終了',false);
+  const menu=$('#g-menu'), mb=$('#g-menubtn');
+  menu.classList.toggle('on',!!UIS.menu); mb.classList.toggle('on',!!UIS.menu);
+  mb.textContent=UIS.menu?'閉じる':'メニュー';
+  mb.onclick=()=>{ UIS.menu=!UIS.menu; renderTools(); };
+  $('#g-menuclose').onclick=()=>{ UIS.menu=false; renderTools(); };
+  const go=fn=>()=>{ UIS.menu=false; renderTools(); fn(); };
+  $('#t-hint').onclick=go(showHint);
+  $('#t-memo').onclick=go(showMemo);
+  $('#t-sh').onclick=go(()=>{ UIS.shanten=!UIS.shanten; renderGame(); });
+  $('#t-suji').onclick=go(()=>{ UIS.suji=!UIS.suji; renderGame(); });
+  $('#t-sujit').onclick=go(()=>{ UIS.sujiTable=!UIS.sujiTable; renderGame(); });
+  $('#t-open').onclick=go(()=>{ UIS.open=!UIS.open; renderGame(); });
+  $('#t-port').onclick=go(()=>{ CFG.mode='portrait'; saveCfg(); applyLayout(); renderGame(); });
+  $('#t-land').onclick=go(()=>{ CFG.mode='landscape'; saveCfg(); applyLayout(); renderGame(); });
+  $('#t-menu').onclick=go(showMenu);
 }
 function tilesRow(list,big){ return list.map(t=>`<span class="tw${big?' big':''}">${UI.tileImg(t)}</span>`).join(''); }
 function renderInfo(){
@@ -444,8 +496,9 @@ function renderInfo(){
   if(UIS.shanten) h+=shantenPanel(obs);
   if(UIS.suji) h+=sujiPanel(obs);
   if(UIS.sujiTable) h+=sujiTablePanel(obs);
-  if(!h) h=`<div class="small muted" style="padding:4px 2px">${esc(lastEventsText())}</div>`;
+  if(!h&&!(GL&&GL.land)) h=`<div class="small muted" style="padding:4px 2px">${esc(lastEventsText())}</div>`;
   box.innerHTML=h;
+  $$('#g-info [data-close]').forEach(b=>b.onclick=()=>{ UIS[b.dataset.close]=false; renderGame(); });
   bindSujiTable();
 }
 function lastEventsText(){
@@ -457,7 +510,7 @@ function lastEventsText(){
 function shantenPanel(obs){
   const c=MJ.counts(obs.hand), m=obs.melds[HUMAN].length, vis=AI.visibleCounts(obs);
   const n=obs.hand.length;
-  let h=`<div class="ipanel"><h3>シャンテン数＆待ち（受け入れ牌）</h3>`;
+  let h=`<div class="ipanel"><h3><span>シャンテン数＆待ち（受け入れ牌）</span><button class="btn-g" data-close="shanten">×</button></h3>`;
   if(n%3===2){
     const s=MJ.shanten(c,m);
     if(s===-1) h+=`<div>和了形です</div>`;
@@ -485,7 +538,7 @@ function shantenPanel(obs){
   return h+'</div>';
 }
 function sujiPanel(obs){
-  let h=`<div class="ipanel"><h3>今スジが何本通っているか？（両面待ちの筋 全18本）</h3>`;
+  let h=`<div class="ipanel"><h3><span>今スジが何本通っているか？（両面待ちの筋 全18本）</span><button class="btn-g" data-close="suji">×</button></h3>`;
   for(let r=1;r<4;r++){
     const o=(HUMAN+r)%4, list=UI.passedSuji(obs,o), n=list.filter(x=>x.passed).length;
     const riichi=obs.riichiSeq[o]>=0;
@@ -504,7 +557,7 @@ function studyState(){
 function sujiTablePanel(obs){
   const S=studyState(), D=S.data[S.opp];
   const o=(HUMAN+S.opp)%4; const truth=UI.passedSuji(obs,o);
-  let h=`<div class="ipanel"><h3>自主学習用スジカウント表</h3>
+  let h=`<div class="ipanel"><h3><span>自主学習用スジカウント表</span><button class="btn-g" data-close="sujiTable">×</button></h3>
     <div class="seg" style="margin-bottom:6px">${[1,2,3].map(r=>`<button data-opp="${r}" class="${S.opp===r?'on':''}">${UI.REL[r]}${obs.riichiSeq[(HUMAN+r)%4]>=0?'★':''}</button>`).join('')}</div>
     <div class="small muted center">通ったと思う筋の本数を数えましょう</div>
     <div class="counter"><button id="st-m">−</button><span class="n">${D.count}</span><button id="st-p">＋</button><button id="st-r" style="width:auto;font-size:13px">0に戻す</button></div>
@@ -533,11 +586,13 @@ function bindSujiTable(){
   const c=$('#st-clr'); if(c) c.onclick=()=>{ D.cells={}; D.count=0; renderInfo(); };
 }
 
-/* ---------- オーバーレイ（#g-side を覆う。卓は見えたまま） ---------- */
+/* ---------- オーバーレイ（縦は手牌から下、横は右側。卓は見えたまま） ---------- */
 function overlay(html,binds){
   closeOverlay();
+  UIS.menu=false; const mn=$('#g-menu'); if(mn) mn.classList.remove('on');
   const d=document.createElement('div'); d.className='ov'; d.id='ov'; d.innerHTML=html;
-  $('#g-side').appendChild(d);
+  $('#g-wrap').appendChild(d);
+  layoutGame();
   if(binds) binds(d);
   return d;
 }
@@ -838,7 +893,7 @@ async function rvStart(gi,set){
   RVGEN++;
   RV={id:'rv-'+newId(),seq:[first],kpos:0,fi:0,log:[],names,set,gen:RVGEN};
   REC={id:RV.id,type:'review',reviewSet:set,createdAt:Date.now(),names,seed:0,decisions:[],memos:[],finished:false,result:null,log:[]};
-  UIS={shanten:false,suji:false,sujiTable:false,open:false,resultOpen:false}; STUDY={};
+  UIS={shanten:false,suji:false,sujiTable:false,open:false,resultOpen:false,menu:false}; STUDY={};
   rvStartKyoku(); rvSave(); await rvSaveRecord(false);
   show('game'); applyLayout(); rvLoop();
 }
@@ -853,7 +908,7 @@ async function rvResume(){
   // これまでの局のログを作り直す
   for(let i=0;i<RV.kpos;i++){ const D=rvDecode(RV.seq[i]); if(!RV.log.length) RV.log.push({type:'start_game',names}); D.ev.forEach(e=>RV.log.push(e)); }
   const fi=sv.fi; rvStartKyoku(); RV.fi=Math.min(fi,RV.frames.length-1);
-  UIS={shanten:false,suji:false,sujiTable:false,open:false,resultOpen:false}; STUDY={};
+  UIS={shanten:false,suji:false,sujiTable:false,open:false,resultOpen:false,menu:false}; STUDY={};
   show('game'); applyLayout(); rvLoop();
 }
 async function rvLoop(){
