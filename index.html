@@ -109,7 +109,7 @@ img.shot{width:100%;border-radius:10px;border:1px solid var(--line)}
 <script src="local/store.js"></script>
 <script>
 "use strict";
-const APP_VERSION='2026-10-26a';
+const APP_VERSION='2026-10-26c';
 /* ========================= 小物 ========================= */
 const $=(s,r)=>(r||document).querySelector(s), $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1661,7 +1661,7 @@ async function renderLocal(){
       ${games.map(g=>{ const r=g.result, my=r? r.order.indexOf(0)+1:null, dec=g.decisions||[], f=dec.filter(d=>!d.ok).length;
         const key='local-'+g.id, gr=groups.get(key);
         return `<div class="queue-item">
-          <div class="row"><b>${fmtDT(g.createdAt)}</b><span class="grow"></span>${g.finished&&r?`<span class="badge ${my===1?'b-correct':'b-new'}">${my}位 ${r.scores[0]}点（${r.final[0]>0?'+':''}${r.final[0]}）</span>`:`<span class="badge b-wait">途中 ${esc(g.kyokuLabel||'')}</span>`}</div>
+          <div class="row"><b>${fmtDT(g.createdAt)}</b><span class="grow"></span>${g.type==='review'?`<span class="badge b-review">復習半荘（本物のMortalと照合）${g.finished?'':' 途中'}</span>`:g.finished&&r?`<span class="badge ${my===1?'b-correct':'b-new'}">${my}位 ${r.scores[0]}点（${r.final[0]>0?'+':''}${r.final[0]}）</span>`:`<span class="badge b-wait">途中 ${esc(g.kyokuLabel||'')}</span>`}</div>
           <div class="small muted">あなたの判断 ${dec.length}回 ／ FALSE ${f}回${dec.length?`（一致率 ${((1-f/dec.length)*100).toFixed(1)}%）`:''}</div>
           ${gr?countsHTML(gr.c):''}
           <div class="row" style="margin-top:6px">

@@ -150,9 +150,11 @@ function actionTile(a){ return a.type==='dahai'||a.type==='kakan'? a.pai : a.typ
 // Mortal 検討画面風の候補一覧
 function candHTML(list,opt){
   opt=opt||{};
-  const show=list.filter((c,i)=>i<(opt.max||8)&&(i<3||c.prob>=0.003));
-  const max=show.length?show[0].prob:1;
   const chosenKey=opt.chosen? root.MJAI.actKey(opt.chosen):null;
+  const show=list.filter((c,i)=>(i<(opt.max||8)&&(i<3||c.prob>=0.003))||root.MJAI.actKey(c.action)===chosenKey);
+  // あなたの手が候補に無い（確率がごく小さい）ときも一覧に出す
+  if(chosenKey&&!show.some(c=>root.MJAI.actKey(c.action)===chosenKey)) show.push({action:opt.chosen,prob:0});
+  const max=show.length?Math.max(show[0].prob,1e-9):1;
   return `<div class="cands">`+show.map((c,i)=>{
     const k=root.MJAI.actKey(c.action), isMe=chosenKey===k;
     const t=actionTile(c.action);
@@ -160,7 +162,7 @@ function candHTML(list,opt){
       <span class="rk">${i+1}</span>
       <span class="ct">${t?tileImg(t,'tile ctile'):''}<span class="cn">${esc(c.action.type==='dahai'?MJ.tileName(t):actionText(c.action,opt.me))}</span></span>
       <span class="cbar"><span style="width:${Math.max(2,c.prob/max*100).toFixed(1)}%"></span></span>
-      <span class="cp">${(c.prob*100).toFixed(1)}%</span>
+      <span class="cp">${c.prob<0.001?'<0.1':(c.prob*100).toFixed(1)}%</span>
       ${isMe?'<span class="cme">あなた</span>':''}
     </div>`; }).join('')+`</div>`;
 }

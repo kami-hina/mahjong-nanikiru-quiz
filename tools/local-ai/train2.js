@@ -112,6 +112,7 @@ if(WRITE){
     testCall:LAST&&LAST.by.call?(100*LAST.by.call.top1/LAST.by.call.n).toFixed(1)+'%':'-',
     note:ALL?'全データで学習（一致率は全データ学習前のテスト値）':'テスト用の半荘を除いて学習',
     trainedAt:new Date().toISOString().slice(0,10),H,perms:perms.length};
+  if(ALL){ meta.testDahai=process.env.TEST_DAHAI||'-'; meta.testCall=process.env.TEST_CALL||'-'; meta.testRiichi=process.env.TEST_RIICHI||'-'; }
   if(process.env.TEST_AGREE) meta.testAgree=process.env.TEST_AGREE;
   const out={meta,lin,mlp:{H,names:AI.F,U:P.U.map(u=>Array.from(u,x=>+x.toFixed(4))),b:Array.from(P.b,x=>+x.toFixed(4)),v:Array.from(P.v,x=>+x.toFixed(4))}};
   const js='/* Mortal代役AIの学習済み重み（tools/local-ai/train2.js が自動生成。手で編集しない）\n   学習データ: Mortal のレビュー '+meta.games+'半荘 / '+meta.decisions+'判断 */\n'

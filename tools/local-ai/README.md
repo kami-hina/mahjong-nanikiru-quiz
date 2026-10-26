@@ -13,8 +13,9 @@ Mortal 本体（ニューラルネット）はブラウザで動かせないた�
 cd tools/local-ai
 node fetch-reports.js ../../.cache/reports        # Mortal のレポートを取得（取得済みは飛ばす）
 node featurize.js ../../.cache/reports ../../.cache/feat --perms 0,1,2   # 特徴量を計算（並列）
-node train2.js ../../.cache/feat --perms 0,1,2              # 学習用/テスト用に分けて精度を確認
-node train2.js ../../.cache/feat --perms 0,1,2 --all --write  # 全データで学習して local/ai-weights.js に書き出す
+node train2.js ../../.cache/feat --perms 0,1,2 --H 32 --epochs 10 --l2 1e-4   # 学習用/テスト用に分けて精度を確認
+TEST_AGREE=77.9% node train2.js ../../.cache/feat --perms 0,1,2 --H 32 --epochs 10 --l2 1e-4 --all --write  # 全データで学習して local/ai-weights.js に書き出す（TEST_AGREE は直前のテスト一致率）
+node build-review.js ../../.cache/reports                   # 復習半荘モード用データ local/review-data.js を作り直す
 node rules-test.js                                          # 対局ルールの単体テスト
 node selfplay.js 5                                          # AI 4人で半荘を自動対局（例外・点数の保存則の確認）
 ```

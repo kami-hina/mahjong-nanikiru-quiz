@@ -8,7 +8,7 @@ const esc=UI.esc;
 const HUMAN=0; let CPU_MS=300;
 const ABORT={abort:true};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const VERSION='2026-10-26a';
+const VERSION='2026-10-26c';
 
 /* ================= 設定 ================= */
 const CFG_KEY='ml.cfg.v1';
@@ -98,6 +98,12 @@ async function renderHome(){
     ${cur&&cur.game&&!cur.game.over?`<button class="hbtn btn-gold" id="h-cont">続きから（${esc(cur.label||'')}）</button>`:''}
     <button class="hbtn btn-p" id="h-new">新しい半荘を始める</button>
     <div class="card">
+      <h2>復習半荘</h2>
+      <p class="small muted" style="margin:0 0 6px">共有された牌譜（Mortalの解析済みの半荘）から1半荘を選び、東1局から最後の局まで、全局を全く同じ手牌・同じ進行で打ちます。あなたの判断は本物の Mortal の解析結果と照合し、違えば FALSE を表示します（共有された全半荘からランダムに選びます）。</p>
+      ${rvSaved()?`<button class="hbtn btn-gold" id="h-rvc">復習半荘の続きから</button>`:''}
+      <button class="hbtn" id="h-rv">復習半荘を始める</button>
+    </div>
+    <div class="card">
       <h2>要チェック</h2>
       <p class="small muted" style="margin:0 0 6px">対局中に「メモ記入」した局面です。あとからまとめて確認できます。</p>
       <button class="hbtn" id="h-chk">要チェックを確認する（未チェック ${unchecked}件 / 全${memos.length}件）</button>
@@ -122,6 +128,8 @@ async function renderHome(){
   const c=$('#h-cont'); if(c) c.onclick=()=>resumeGame(cur);
   $('#h-new').onclick=async()=>{ if(cur&&cur.game&&!cur.game.over&&!confirm('対局中の半荘があります。新しく始めると、対局中の半荘は途中までの牌譜として保存されます。よろしいですか？')) return; newGame(); };
   $('#h-chk').onclick=renderChecks; $('#h-logs').onclick=renderLogs; $('#h-set').onclick=renderSettings;
+  $('#h-rv').onclick=()=>{ if(rvSaved()&&!confirm('途中の復習半荘があります。新しく始めると、途中までの記録は牌譜一覧に保存されます。よろしいですか？')) return; rvStart(); };
+  const rc=$('#h-rvc'); if(rc) rc.onclick=rvResume;
   $('#h-port').onclick=()=>{ CFG.mode='portrait'; saveCfg(); applyLayout(); renderHome(); };
   $('#h-land').onclick=()=>{ CFG.mode='landscape'; saveCfg(); applyLayout(); renderHome(); };
 }
@@ -151,7 +159,7 @@ async function resumeGame(cur){
 function kyokuLabel(){ return G? UI.WIND[G.bakaze]+G.kyoku+'局 '+G.honba+'本場' : ''; }
 let lastSave=0, saveTimer=null;
 async function persist(force){
-  if(!G||!REC) return;
+  if(!G||!REC||G.review) return;
   const now=Date.now();
   if(!force&&now-lastSave<1500){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>persist(true),1600); return; }
   lastSave=now; clearTimeout(saveTimer);
@@ -159,7 +167,7 @@ async function persist(force){
   const game=G.toJSON();
   await Store.saveCurrent({savedAt:now,label:REC.kyokuLabel,rec:Object.assign({},REC,{log:undefined}),game});
 }
-async function saveRecord(){ if(!REC) return; REC.log=G.log; REC.kyokuLabel=kyokuLabel(); await Store.saveGame(Object.assign({},REC,{log:G.log.slice()})); }
+async function saveRecord(){ if(!REC||!G||G.review) return; REC.log=G.log; REC.kyokuLabel=kyokuLabel(); await Store.saveGame(Object.assign({},REC,{log:G.log.slice()})); }
 document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden'&&SCREEN==='game') persist(true); });
 window.addEventListener('pagehide',()=>{ if(SCREEN==='game') persist(true); });
 
@@ -551,7 +559,8 @@ function showFalse(P,choice){
     const best=P.list[0];
     overlay(`<div class="ovb">
       <div class="row"><span class="false">FALSE</span><span class="grow"></span><span class="small muted">${esc(decisionTitle(P))}</span></div>
-      <div style="margin-top:6px">あなた：<b style="color:#ff8a8a">${esc(UI.actionText(choice,HUMAN))}</b>　Mortal代役の推奨：<b style="color:var(--accent)">${esc(UI.actionText(best.action,HUMAN))}</b>（${(best.prob*100).toFixed(1)}%）</div>
+      <div style="margin-top:6px">あなた：<b style="color:#ff8a8a">${esc(UI.actionText(choice,HUMAN))}</b>　${P.review?'Mortal（本物）':'Mortal代役'}の推奨：<b style="color:var(--accent)">${esc(UI.actionText(best.action,HUMAN))}</b>（${(best.prob*100).toFixed(1)}%）</div>
+      ${P.review&&P.actual?`<div class="small muted">実戦（実際の牌譜）：${esc(UI.actionText(P.actual,HUMAN))}${AI.actKey(P.actual)===AI.actKey(best.action)?'（実戦では正解していました）':''}</div>`:''}
       ${whyHTML(P.why)}
       ${handBarsHTML(P,choice)}
       ${UI.candHTML(P.list,{chosen:choice,me:HUMAN,max:10})}
@@ -567,7 +576,7 @@ function showHint(){
   PEND.hinted=true;
   const P=PEND;
   overlay(`<div class="ovb">
-    <div class="row"><b style="font-size:16px">Mortal代役の評価</b><span class="grow"></span><span class="small muted">${esc(decisionTitle(P))}</span></div>
+    <div class="row"><b style="font-size:16px">${P.review?'Mortal（本物）の解析':'Mortal代役の評価'}</b><span class="grow"></span><span class="small muted">${esc(decisionTitle(P))}</span></div>
     <div style="margin-top:4px">推奨：<b style="color:var(--accent)">${esc(UI.actionText(P.list[0].action,HUMAN))}</b>（${(P.list[0].prob*100).toFixed(1)}%）</div>
     ${whyHTML(AI.explain(P.obs,P.list,null),'推奨打牌選定理由（次点の '+UI.actionText((P.list[1]||P.list[0]).action,HUMAN)+' との比較）')}
     ${handBarsHTML(P,null)}
@@ -589,7 +598,7 @@ async function saveMemo(text){
   const id=newId();
   const P=PEND;
   const view=JSON.parse(JSON.stringify(gameView()));
-  const m={id,gameId:REC.id,createdAt:Date.now(),text:text||'（メモなし）',checked:false,kyokuLabel:kyokuLabel(),logIndex:G.log.length,view,
+  const m={id,gameId:REC.id,createdAt:Date.now(),text:text||'（メモなし）',checked:false,kyokuLabel:kyokuLabel()+(G.review?'（復習半荘）':''),logIndex:G.log.length,view,
     hand:G.k.hands[HUMAN].slice(),drawn:G.k.drawn[HUMAN],
     list:P? P.list.slice(0,12).map(c=>({a:c.action,p:+c.prob.toFixed(5)})) : null, title:P? decisionTitle(P):'局面'};
   if(P&&P.decided&&REC.decisions.length){ const d=REC.decisions[REC.decisions.length-1]; m.decision={chosen:d.chosen,ok:d.ok,n:d.n};
@@ -600,6 +609,7 @@ async function saveMemo(text){
   await persist(true);
 }
 function showMenu(){
+  if(G&&G.review) return rvMenu();
   overlay(`<div class="ovb"><b style="font-size:16px">メニュー</b>
     <p class="small muted">${esc(kyokuLabel())}</p>
     <button class="hbtn" id="m-home">中断してホームへ（続きから再開できます）</button>
@@ -651,6 +661,280 @@ async function endGame(){
   });
 }
 
+/* ================= 復習半荘 =================
+   共有された牌譜（local/review-data.js）の局を、配牌・ツモ・他家の打牌まで実際の牌譜どおりに再現する。
+   あなたの判断の場面では本物の Mortal の評価と照合し、違えば FALSE。判断のあとも局は実際の牌譜どおりに進む
+   （Mortal の解析と同じ状況を保つため）。局は、点数状況・順位・場・親の位置が近いものを複数の牌譜から選ぶ。 */
+const RVKEY='ml.review.v1';
+// 復習半荘のデータ（約6MB）は使うときだけ読み込む（オフラインでも Service Worker の保存分から読める）
+function loadReviewData(){
+  if(window.ML_REVIEW) return Promise.resolve(true);
+  return new Promise(res=>{ const sc=document.createElement('script'); sc.src='local/review-data.js';
+    sc.onload=()=>res(!!window.ML_REVIEW); sc.onerror=()=>res(false); document.body.appendChild(sc); });
+}
+let RV=null;
+const rvPool=()=>(window.ML_REVIEW&&window.ML_REVIEW.kyokus)||[];
+function rvSaved(){ try{ return JSON.parse(localStorage.getItem(RVKEY)||'null'); }catch(e){ return null; } }
+function rvSetSaved(v){ try{ if(v) localStorage.setItem(RVKEY,JSON.stringify(v)); else localStorage.removeItem(RVKEY); }catch(e){} }
+const chunks=str=>{ const a=[]; for(let i=0;i<str.length;i+=2) a.push(str.slice(i,i+2)); return a; };
+// あなた（pid）を席0にした相対の点数・順位・自風
+function rvRel(K){
+  const s=[0,1,2,3].map(i=>K.s[(i+K.pid)%4]);
+  let rank=0; for(let i=1;i<4;i++) if(s[i]>s[0]) rank++;
+  return {wind:(K.pid-K.o+4)%4,s,rank};
+}
+const RVDONE='ml.review.done.v1';
+function rvDone(){ try{ return new Set(JSON.parse(localStorage.getItem(RVDONE)||'[]')); }catch(e){ return new Set(); } }
+function rvMarkDone(g){ const d=rvDone(); d.add(g); try{ localStorage.setItem(RVDONE,JSON.stringify([...d])); }catch(e){} }
+// 半荘の最初の局（全半荘からランダム）
+function rvPickFirst(){
+  const pool=rvPool(), done=rvDone(), first=new Map();
+  pool.forEach((K,i)=>{ if(K.ki===0&&!first.has(K.g)) first.set(K.g,i); });
+  const c=[...first.values()]; // 復習済みかどうかに関係なく、共有された全半荘から選ぶ
+  return c.length? c[Math.floor(Math.random()*c.length)] : -1;
+}
+// 前の局の「実際の続き」の状況（場・局・本場・点数・順位・自風）に近い局を選ぶ
+function rvPickNext(prev){
+  const P=rvPool()[prev]; return P&&P.nx>=0? P.nx : -1;
+}
+// （未使用）似た状況の局を選ぶ方式
+function rvPickSimilar(prev,used){
+  const pool=rvPool(), P=pool[prev]; if(!P||P.nx<0) return -1;
+  const T=pool[P.nx], tr=rvRel(T);
+  const sc=[];
+  pool.forEach((K,i)=>{
+    if(used.has(i)||!K.en.length||K.b!==T.b||K.k!==T.k) return;
+    const r=rvRel(K); if(r.wind!==tr.wind) return;
+    const d=Math.abs(r.s[0]-tr.s[0])/1000+(Math.abs(r.s[1]-tr.s[1])+Math.abs(r.s[2]-tr.s[2])+Math.abs(r.s[3]-tr.s[3]))/3000
+      +4*Math.abs(r.rank-tr.rank)+2*Math.abs(K.h-T.h)+Math.abs(K.kt-T.kt);
+    sc.push([d,i]);
+  });
+  if(!sc.length) return used.has(P.nx)? -1 : P.nx;
+  sc.sort((a,b)=>a[0]-b[0]);
+  const near=sc.filter(x=>x[0]<=sc[0][0]+6).slice(0,3);
+  return near[Math.floor(Math.random()*near.length)][1];
+}
+// 局のデータを、あなたが席0になるよう回転してローカル麻雀のログ形式に直す
+function rvDecode(idx){
+  const K=rvPool()[idx], pid=K.pid, r=x=>((+x-pid)%4+4)%4, rot=a=>[0,1,2,3].map(i=>a[(i+pid)%4]);
+  const th=K.th.split(' ').map(chunks);
+  const ev=[{type:'start_kyoku',bakaze:K.b,kyoku:K.k,honba:K.h,kyotaku:K.kt,oya:r(K.o),scores:rot(K.s),dora_marker:K.dr,tehais:rot(th)}];
+  const toks=K.ev? K.ev.split(' ') : [];
+  let ri=0;
+  for(const t of toks){
+    const c=t[0];
+    if(c==='t') ev.push({type:'tsumo',actor:r(t[1]),pai:t.slice(2,4)});
+    else if(c==='d') ev.push({type:'dahai',actor:r(t[1]),pai:t.slice(2,4),tsumogiri:t.endsWith('*')});
+    else if(c==='r') ev.push({type:'reach',actor:r(t[1])});
+    else if(c==='R') ev.push({type:'reach_accepted',actor:r(t[1])});
+    else if(c==='c'||c==='p'||c==='m') ev.push({type:{c:'chi',p:'pon',m:'daiminkan'}[c],actor:r(t[1]),target:r(t[2]),pai:t.slice(3,5),consumed:chunks(t.slice(5))});
+    else if(c==='a') ev.push({type:'ankan',actor:r(t[1]),consumed:chunks(t.slice(2))});
+    else if(c==='k') ev.push({type:'kakan',actor:r(t[1]),pai:t.slice(2,4),consumed:chunks(t.slice(4))});
+    else if(c==='D') ev.push({type:'dora',dora_marker:t.slice(1,3)});
+    else if(c==='h'){ const R=K.res[ri++]||{}; const d=rot(R.d||[0,0,0,0]);
+      ev.push({type:'hora',actor:r(t[1]),target:r(t[2]),pai:null,deltas:d,ura_markers:R.u||[],yaku:[],points:Math.max.apply(null,d),hand:R.hand?chunks(R.hand):[]}); }
+    else if(c==='y'){ const R=K.res[ri++]||{}; ev.push({type:'ryukyoku',reason:'流局',deltas:rot(R.d||[0,0,0,0])}); }
+  }
+  ev.push({type:'end_kyoku'});
+  return {K,ev,toks,pid};
+}
+function rvAction(code,ctx){
+  const c=code[0];
+  if(code==='r') return {type:'reach'};
+  if(code==='n') return {type:'none'};
+  if(code==='y') return {type:'ryukyoku'};
+  if(code==='h') return ctx.react? {type:'hora',pai:ctx.tile,target:ctx.from} : {type:'hora',pai:ctx.drawn};
+  if(code==='m') return {type:'daiminkan',pai:ctx.tile,consumed:ctx.hand.filter(t=>MJ.kind(t)===MJ.kind(ctx.tile)).slice(0,3),target:ctx.from};
+  if(c==='d'){ const pai=code.slice(1,3); return {type:'dahai',pai,tsumogiri:pai===ctx.drawn}; }
+  if(c==='c'||c==='p') return {type:c==='c'?'chi':'pon',pai:ctx.tile,consumed:chunks(code.slice(1)),target:ctx.from};
+  if(c==='a'){ const k=MJ.kind(code.slice(1,3)); return {type:'ankan',consumed:ctx.hand.filter(t=>MJ.kind(t)===k)}; }
+  if(c==='k') return {type:'kakan',pai:code.slice(1,3)};
+  return {type:'none'};
+}
+function rvStartKyoku(){
+  const D=rvDecode(RV.seq[RV.kpos]);
+  RV.cur=D;
+  RV.base=RV.log.length; // この局の start_kyoku の位置
+  if(!RV.log.length) RV.log.push({type:'start_game',names:RV.names.slice()});
+  RV.base=RV.log.length;
+  for(const e of D.ev) RV.log.push(e);
+  const ky=UI.replayLog([{type:'start_game',names:RV.names}].concat(D.ev));
+  RV.frames=ky[0].frames;
+  RV.entries=new Map(D.K.en.map(e=>[e.p,e]));
+}
+function rvApplyFrame(){
+  const F=RV.frames[RV.fi], v=F.view;
+  let last=null;
+  if(F.hl){ const d=v.rivers[F.hl.seat][F.hl.idx]; if(d) last={actor:F.hl.seat,pai:d.pai}; }
+  RV.last=last;
+  const applied=RV.base+1+RV.fi;
+  G={review:true,names:RV.names,log:RV.log.slice(0,applied),kyokuNo:RV.kpos+1,
+    oya:v.oya,bakaze:v.bakaze,kyoku:v.kyoku,honba:v.honba,kyotaku:v.kyotaku,scores:v.scores,
+    k:{hands:v.hands,drawn:v.drawn,riichi:v.riichi,melds:v.melds,rivers:v.rivers,turn:v.last?v.last.actor:v.oya,lastDiscard:last,riichiSeq:v.riichiSeq},
+    left:()=>v.left, doraIndicators:()=>v.dora, isAllLast:()=>(v.bakaze===1&&v.kyoku===4)||v.bakaze>=2,
+    obsFor:s=>({me:s,oya:v.oya,bakaze:v.bakaze,kyoku:v.kyoku,honba:v.honba,kyotaku:v.kyotaku,scores:v.scores.slice(),dora:v.dora.slice(),left:v.left,
+      hand:v.hands[s].slice(),drawn:v.drawn[s],melds:v.melds,rivers:v.rivers,riichiSeq:v.riichiSeq,last,allLast:(v.bakaze===1&&v.kyoku===4)||v.bakaze>=2}),
+    discardable:(sx,rd)=>{ if(!PEND) return []; let ts=PEND.actions.filter(a=>a.type==='dahai').map(a=>a.pai);
+      if(rd) ts=ts.filter(t=>{ const h=v.hands[HUMAN].slice(); h.splice(h.indexOf(t),1); return MJ.shanten(MJ.counts(h),v.melds[HUMAN].length)===0; });
+      return ts; }};
+}
+function rvSave(){
+  if(!RV) return;
+  rvSetSaved({id:RV.id,seq:RV.seq,kpos:RV.kpos,fi:RV.fi,savedAt:Date.now()});
+}
+async function rvSaveRecord(finished){
+  if(!RV) return;
+  REC.log=RV.log.slice(); REC.finished=!!finished; REC.kyokuLabel=kyokuLabel();
+  REC.seq=RV.seq.slice(); REC.kpos=RV.kpos;
+  await Store.saveGame(Object.assign({},REC,{log:RV.log.slice()}));
+}
+async function rvStart(){
+  toast('牌譜データを読み込んでいます…',1500);
+  if(!await loadReviewData()){ toast('復習半荘のデータを読み込めませんでした'); return; }
+  const old=rvSaved(); if(old){ rvSetSaved(null); }
+  const first=rvPickFirst();
+  if(first<0){ toast('復習半荘に使える牌譜がありません'); return; }
+  const names=['あなた','下家','対面','上家'];
+  RV={id:'rv-'+newId(),seq:[first],kpos:0,fi:0,log:[],names};
+  REC={id:RV.id,type:'review',createdAt:Date.now(),names,seed:0,decisions:[],memos:[],finished:false,result:null,log:[]};
+  UIS={shanten:false,suji:false,sujiTable:false,open:false,resultOpen:false}; STUDY={};
+  rvStartKyoku(); rvSave(); await rvSaveRecord(false);
+  show('game'); applyLayout(); rvLoop();
+}
+async function rvResume(){
+  const sv=rvSaved(); if(!sv) return;
+  if(!await loadReviewData()){ toast('復習半荘のデータを読み込めませんでした'); return; }
+  const rec=await Store.getGame(sv.id);
+  if(!rec){ rvSetSaved(null); toast('途中の記録が見つかりません'); return renderHome(); }
+  REC=rec; const names=rec.names||['あなた','下家','対面','上家'];
+  RV={id:sv.id,seq:sv.seq,kpos:sv.kpos,fi:sv.fi,log:[],names};
+  // これまでの局のログを作り直す
+  for(let i=0;i<RV.kpos;i++){ const D=rvDecode(RV.seq[i]); if(!RV.log.length) RV.log.push({type:'start_game',names}); D.ev.forEach(e=>RV.log.push(e)); }
+  const fi=sv.fi; rvStartKyoku(); RV.fi=Math.min(fi,RV.frames.length-1);
+  UIS={shanten:false,suji:false,sujiTable:false,open:false,resultOpen:false}; STUDY={};
+  show('game'); applyLayout(); rvLoop();
+}
+async function rvLoop(){
+  if(LOOPING) return; LOOPING=true;
+  try{
+    while(SCREEN==='game'&&RV){
+      rvApplyFrame(); renderGame();
+      const F=RV.frames[RV.fi];
+      // あなたの判断の場面
+      const e=RV.entries.get(RV.fi);
+      if(e&&!RV.done){
+        const r=await rvPrompt(e,F); if(r===ABORT||!RV) return;
+      }
+      if(RV.fi>=RV.frames.length-1){
+        // 局の終わり
+        UIS.resultOpen=true; renderGame();
+        await rvSaveRecord(false);
+        const r=await rvResult(); if(r===ABORT||!RV) return;
+        UIS.resultOpen=false;
+        const nx=rvPickNext(RV.seq[RV.kpos]);
+        if(nx<0){ await rvFinish(); return; }
+        RV.seq.push(nx); RV.kpos++; RV.fi=0; STUDY={};
+        rvStartKyoku(); rvSave(); continue;
+      }
+      // 次のイベントへ（他家の打牌・鳴きは0.3秒）
+      const nextEv=RV.frames[RV.fi+1].ev;
+      RV.fi++;
+      if(nextEv&&nextEv.actor!==HUMAN&&['dahai','chi','pon','daiminkan','ankan','kakan','reach'].indexOf(nextEv.type)>=0) await sleep(CPU_MS);
+      else if(nextEv&&nextEv.actor===HUMAN&&nextEv.type!=='tsumo') await sleep(CPU_MS?150:0);
+      if(!RV||SCREEN!=='game') return;
+      if(RV.fi%6===0) rvSave();
+    }
+  } catch(err){ console.error(err); alert('エラーが発生しました: '+(err&&err.message)); }
+  finally{ LOOPING=false; }
+}
+async function rvPrompt(e,F){
+  const v=F.view, toks=RV.cur.toks, prevTok=toks[RV.fi-1]||'';
+  const mine=((+prevTok[1]-RV.cur.pid+4)%4)===HUMAN;
+  const myTurn=mine&&(prevTok[0]==='t'||prevTok[0]==='c'||prevTok[0]==='p'||prevTok[0]==='r');
+  const obs=G.obsFor(HUMAN);
+  const ctx={react:!myTurn,tile:RV.last&&RV.last.pai,from:RV.last&&RV.last.actor,drawn:v.drawn[HUMAN],hand:v.hands[HUMAN]};
+  if(!myTurn&&prevTok[0]==='k'){ ctx.tile=prevTok.slice(2,4); ctx.from=((+prevTok[1]-RV.cur.pid+4)%4); }
+  if(!myTurn) obs.last={actor:ctx.from,pai:ctx.tile};
+  const legal=[...new Set(e.l.split(' '))].map(c=>rvAction(c,ctx));
+  if(legal.length<=1) return true;
+  let list=e.c.split('|').map(x=>{ const [c,p]=x.split(':'); return {action:rvAction(c,ctx),prob:+p}; });
+  const expected=rvAction(e.e,ctx), actual=rvAction(e.a,ctx);
+  // 推奨（expected）を先頭に
+  const ek=AI.actKey(expected); const ei=list.findIndex(c=>AI.actKey(c.action)===ek);
+  if(ei>0){ const x=list.splice(ei,1)[0]; list.unshift(x); } else if(ei<0) list.unshift({action:expected,prob:1});
+  const kind=myTurn? (prevTok[0]==='r'?'riichi_discard':'self') : 'react';
+  PEND={kind,obs,actions:legal,list,i:RV.base+1+RV.fi,memoIds:[],hinted:false,tile:ctx.tile,from:ctx.from,review:true,expected,actual};
+  SEL=-1; SUBMENU=null; RSEL=false; PRESEL=null;
+  const pr=new Promise(res=>{ PEND.resolve=res; });
+  renderGame();
+  const choice=await pr;
+  if(choice===ABORT) return ABORT;
+  PRESEL=null; RSEL=false;
+  const P=PEND;
+  const ok=AI.actKey(choice)===ek;
+  const why=AI.explain(P.obs,P.list,ok?null:choice);
+  P.why=why; P.decided=true;
+  const n=REC.decisions.length;
+  REC.decisions.push({n,i:P.i,kind,list:P.list.slice(0,10).map(c=>({a:c.action,p:+(+c.prob).toFixed(5)})),chosen:choice,ok,actual,actualOk:AI.actKey(actual)===ek,
+    hinted:P.hinted,at:Date.now(),kyoku:kyokuLabel(),why,src:{g:RV.cur.K.g,ki:RV.cur.K.ki},mortal:true});
+  for(const id of P.memoIds){ const ms=await Store.listMemos(); const m=ms.find(x=>x.id===id); if(m){ m.decision={chosen:choice,ok,n}; m.why=why; await Store.saveMemo(m); } }
+  if(!ok&&CFG.judge!=='off'){ const r=await showFalse(P,choice); if(r===ABORT){ PEND=null; return ABORT; } }
+  PEND=null;
+  rvSetSaved({id:RV.id,seq:RV.seq,kpos:RV.kpos,fi:RV.fi+1,savedAt:Date.now()});
+  await rvSaveRecord(false); // 判断の記録をすぐ保存（中断→再開しても消えないように）
+  return true;
+}
+function rvResult(){
+  return new Promise(res=>{
+    const evs=RV.cur.ev, wins=evs.filter(e=>e.type==='hora'), ry=evs.find(e=>e.type==='ryukyoku');
+    const names=RV.names, F=RV.frames[RV.frames.length-1].view;
+    let h='<div class="ovb">';
+    const deltas=[0,0,0,0];
+    for(const w of wins){ for(let i=0;i<4;i++) deltas[i]+=w.deltas[i];
+      h+=`<div style="margin-bottom:8px"><div style="font-size:17px;font-weight:900">${esc(names[w.actor])} ${w.actor===w.target?'ツモ':'ロン（'+esc(names[w.target])+'から）'} ${w.deltas[w.actor]>0?'+'+w.deltas[w.actor]:''}</div>
+        <div class="res-hand">${(F.hands[w.actor]||[]).map(t=>`<span class="tw">${UI.tileImg(t)}</span>`).join('')}</div></div>`; }
+    if(ry){ for(let i=0;i<4;i++) deltas[i]+=ry.deltas[i]; h+=`<div style="font-size:17px;font-weight:900">流局</div>`; }
+    h+=`<table style="width:100%;margin-top:8px;font-size:14px">`+[0,1,2,3].map(s=>`<tr><td>${esc(names[s])}</td><td style="text-align:right">${F.scores[s]}</td><td style="text-align:right;color:${deltas[s]>0?'var(--accent)':deltas[s]<0?'#ff8a8a':'var(--muted)'}">${deltas[s]>0?'+':''}${deltas[s]||''}</td></tr>`).join('')+`</table>`;
+    const kd=REC.decisions.filter(d=>d.src&&d.src.g===RV.cur.K.g&&d.src.ki===RV.cur.K.ki);
+    h+=`<div class="small muted" style="margin-top:8px">この局のあなたの判断 ${kd.length}回 ／ FALSE ${kd.filter(d=>!d.ok).length}回（実戦では ${kd.filter(d=>!d.actualOk).length}回 Mortal と不一致）</div>`;
+
+    h+='</div><div class="ovf"><button class="btn-g" id="r-memo" style="flex:.6">メモ記入</button><button class="btn-p" id="r-next">次の局へ</button></div>';
+    overlay(h,d=>{ $('#r-next',d).onclick=()=>{ closeOverlay(); res(true); }; $('#r-memo',d).onclick=()=>showMemo(()=>rvResult().then(res)); });
+  });
+}
+async function rvFinish(){
+  const dec=REC.decisions, f=dec.filter(d=>!d.ok).length, fa=dec.filter(d=>!d.actualOk).length;
+  REC.result=null; REC.finished=true; await rvSaveRecord(true); rvSetSaved(null);
+  if(RV.cur) rvMarkDone(RV.cur.K.g);
+  const gid=RV.cur&&window.ML_REVIEW.games[RV.cur.K.g]; const fin=RV.frames[RV.frames.length-1].view.scores;
+  const id=REC.id;
+  overlay(`<div class="ovb"><div style="font-size:18px;font-weight:900">復習半荘 終了</div>
+    <table style="width:100%;margin:8px 0;font-size:15px">
+      <tr><td>打った局</td><td style="text-align:right">${RV.seq.length}局（牌譜 ${esc(gid?gid.id.slice(0,8):'')}）</td></tr>
+      <tr><td>最終の点数（実際の牌譜）</td><td style="text-align:right">${fin.join(' / ')}</td></tr>
+      <tr><td>あなたの判断</td><td style="text-align:right">${dec.length}回</td></tr>
+      <tr><td>FALSE（本物の Mortal と不一致）</td><td style="text-align:right">${f}回</td></tr>
+      <tr><td>今回の一致率</td><td style="text-align:right"><b>${dec.length?((1-f/dec.length)*100).toFixed(1):'-'}%</b></td></tr>
+      <tr><td>同じ場面の実戦での一致率</td><td style="text-align:right">${dec.length?((1-fa/dec.length)*100).toFixed(1):'-'}%</td></tr>
+    </table>
+  </div><div class="ovf"><button class="btn-g" id="e-log">牌譜を見る</button><button class="btn-g" id="e-home">ホーム</button><button class="btn-p" id="e-new">もう1回</button></div>`,d=>{
+    $('#e-log',d).onclick=()=>{ closeOverlay(); RV=null; openViewer(id); };
+    $('#e-home',d).onclick=()=>{ closeOverlay(); RV=null; renderHome(); };
+    $('#e-new',d).onclick=()=>{ closeOverlay(); RV=null; rvStart(); };
+  });
+}
+function rvMenu(){
+  overlay(`<div class="ovb"><b style="font-size:16px">メニュー（復習半荘）</b>
+    <p class="small muted">${esc(kyokuLabel())}</p>
+    <button class="hbtn" id="m-home">中断してホームへ（続きから再開できます）</button>
+    <button class="hbtn btn-d" id="m-end">この復習半荘をやめる（ここまでの記録は保存）</button>
+  </div><div class="ovf"><button class="btn-p" id="m-close">閉じる</button></div>`,d=>{
+    $('#m-close',d).onclick=()=>closeOverlay();
+    $('#m-home',d).onclick=async()=>{ closeOverlay(); rvSave(); await rvSaveRecord(false); RV=null; G=null; renderHome(); };
+    $('#m-end',d).onclick=async()=>{ if(!confirm('この復習半荘をやめますか？')) return; closeOverlay(); await rvSaveRecord(false); rvSetSaved(null); RV=null; G=null; PEND=null; renderHome(); };
+  });
+}
+
 /* ================= 牌譜一覧 ================= */
 async function renderLogs(){
   show('logs');
@@ -659,7 +943,7 @@ async function renderLogs(){
     ${games.length?'':'<p class="muted center">まだ牌譜がありません。</p>'}
     ${games.map(g=>{ const r=g.result, my=r? r.order.indexOf(0)+1 : null; const dec=g.decisions||[], f=dec.filter(d=>!d.ok).length;
       return `<div class="item" data-g="${esc(g.id)}">
-        <div class="row"><b>${esc(UI.fmtDT(g.createdAt))}</b><span class="grow"></span>${g.finished?`<span class="badge ${my===1?'b-ok':''}">${my}位 ${r.scores[0]}点 ${r.final[0]>0?'+':''}${r.final[0]}</span>`:`<span class="badge b-chk">途中（${esc(g.kyokuLabel||'')}）</span>`}</div>
+        <div class="row"><b>${esc(UI.fmtDT(g.createdAt))}</b>${g.type==='review'?'<span class="badge b-chk">復習半荘</span>':''}<span class="grow"></span>${g.type==='review'?`<span class="badge">${g.finished?'完了':'途中'}</span>`:g.finished?`<span class="badge ${my===1?'b-ok':''}">${my}位 ${r.scores[0]}点 ${r.final[0]>0?'+':''}${r.final[0]}</span>`:`<span class="badge b-chk">途中（${esc(g.kyokuLabel||'')}）</span>`}</div>
         <div class="small muted">判断 ${dec.length}回 ／ <span style="color:#ff8a8a">FALSE ${f}回</span> ／ メモ ${(g.memos||[]).length}件</div>
         <div class="row" style="margin-top:6px"><button class="grow btn-p" data-v="${esc(g.id)}">牌譜を見る</button><button class="btn-g" data-f="${esc(g.id)}" ${f?'':'disabled'}>FALSEから見る</button></div>
         <div class="row" style="margin-top:6px"><button class="grow btn-g" data-th="${esc(g.id)}">天鳳形式で書き出す（Mortal検証用）</button><button class="btn-d" data-del="${esc(g.id)}">削除</button></div>
@@ -717,7 +1001,8 @@ function drawViewer(){
     const list=d.list.map(x=>({action:x.a,prob:x.p}));
     dh+=`<div class="card" style="margin-top:8px"><div class="row">${d.ok?'<span class="okmark">OK</span>':'<span class="false" style="font-size:24px">FALSE</span>'}
       <span class="grow"></span><span class="small muted">判断${d.n+1}${d.hinted?'（ヒント使用）':''}</span></div>
-      <div>あなた：<b>${esc(UI.actionText(d.chosen,0))}</b>　推奨：<b style="color:var(--accent)">${esc(UI.actionText(list[0].action,0))}</b></div>
+      <div>あなた：<b>${esc(UI.actionText(d.chosen,0))}</b>　${d.mortal?'Mortal（本物）':''}推奨：<b style="color:var(--accent)">${esc(UI.actionText(list[0].action,0))}</b></div>
+      ${d.actual?`<div class="small muted">実戦：${esc(UI.actionText(d.actual,0))}</div>`:''}
       ${whyHTML(d.why)}
       ${UI.candHTML(list,{chosen:d.chosen,me:0,max:8})}</div>`;
   });
@@ -869,5 +1154,5 @@ if('serviceWorker' in navigator&&location.protocol.startsWith('http')){
 window.addEventListener('hashchange',()=>{ const m=location.hash.match(/game=([\w-]+)(?:&d=(\d+))?/); if(m) openViewer(m[1],{dec:m[2]!=null?+m[2]:null}); });
 boot();
 // テスト用に内部状態を公開
-window.__ML={set fast(v){ CPU_MS=v?0:300; },get G(){return G;},get REC(){return REC;},get PEND(){return PEND;},choose,CFG,renderGame,applyLayout};
+window.__ML={get RV(){return RV;},set fast(v){ CPU_MS=v?0:300; },get G(){return G;},get REC(){return REC;},get PEND(){return PEND;},choose,CFG,renderGame,applyLayout};
 })();
