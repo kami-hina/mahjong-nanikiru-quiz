@@ -8,7 +8,11 @@ const out=process.argv[2]; if(!out){ console.error('usage: node fetch-reports.js
 fs.mkdirSync(out,{recursive:true});
 const ids=new Set();
 const add=s=>{ const re=/report\/([0-9a-f]{6,})\.json/g; let m; while((m=re.exec(s))) ids.add(m[1]); };
-for(const f of ['牌譜データ.json','牌譜データv2.txt']){ const p=path.join(root,f); if(fs.existsSync(p)) add(fs.readFileSync(p,'utf8')); }
+// 牌譜データ.json / 牌譜データv2.txt / 牌譜データv3.txt … のように「牌譜データ」で始まるファイルをすべて読む
+const tenhou=new Set();
+for(const f of fs.readdirSync(root).filter(f=>/^牌譜データ.*\.(json|txt)$/.test(f))){
+  const s=fs.readFileSync(path.join(root,f),'utf8'); add(s);
+  (s.match(/https?:\/\/tenhou\.net\/\d+\/\?log=[\w-]+[^\s"]*/g)||[]).forEach(u=>tenhou.add(u)); }
 const get=url=>new Promise((res,rej)=>{ https.get(url,r=>{ if(r.statusCode!==200){ r.resume(); return rej(new Error('HTTP '+r.statusCode)); }
   const ch=[]; r.on('data',c=>ch.push(c)); r.on('end',()=>res(Buffer.concat(ch))); }).on('error',rej); });
 (async()=>{
@@ -20,4 +24,8 @@ const get=url=>new Promise((res,rej)=>{ https.get(url,r=>{ if(r.statusCode!==200
     catch(e){ fail++; console.error('×',id,e.message); }
   }
   console.log(`レポート ${ids.size}件: 新規 ${n} / 取得済み ${skip} / 失敗 ${fail}`);
+  // Mortal の解析URLではなく天鳳の牌譜URLだけが書かれたものは、Mortal にかけるまで学習に使えない
+  const json=fs.existsSync(path.join(root,'牌譜データ.json'))? fs.readFileSync(path.join(root,'牌譜データ.json'),'utf8') : '';
+  const pending=[...tenhou].filter(u=>{ const m=u.match(/log=([\w-]+)/); return m&&json.indexOf(m[1])<0; });
+  if(pending.length) console.log(`天鳳の牌譜URL（Mortal 未解析）: ${pending.length}件。Mortal にかけて結果URLを牌譜データに追加すると学習に使えます。`);
 })();

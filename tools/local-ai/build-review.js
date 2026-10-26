@@ -29,14 +29,23 @@ function actCode(a,hand){
   }
   return '?';
 }
-const out={v:1,games:[],kyokus:[]};
+const out={v:2,games:[],kyokus:[]};
+// 出どころ: 牌譜データ.json / 牌譜データv3*.txt の半荘は「復習半荘」用（main）、牌譜データv2 だけにある半荘は学習用（v2）
+const root=path.join(__dirname,'..','..');
+const idsIn=f=>{ const p=path.join(root,f); if(!fs.existsSync(p)) return new Set(); const s=fs.readFileSync(p,'utf8'); const out=new Set(); const re=/report\/([0-9a-f]{6,})\.json/g; let m; while((m=re.exec(s))) out.add(m[1]); return out; };
+const MAIN=new Set(), V2=new Set();
+for(const f of fs.readdirSync(root).filter(f=>/^牌譜データ.*\.(json|txt)$/.test(f))){
+  const ids=idsIn(f); const isV2=/^牌譜データv2/.test(f);
+  ids.forEach(id=>(isV2?V2:MAIN).add(id)); }
 const files=fs.readdirSync(dir).filter(f=>f.endsWith('.json')).sort();
 let nEnt=0, nMiss=0;
 for(const f of files){
   const rep=JSON.parse(fs.readFileSync(path.join(dir,f),'utf8'));
   if(!rep.review||!rep.mjai_log||rep.game_length!=='Hanchan') continue;
   const PID=rep.player_id|0, log=rep.mjai_log;
-  const gi=out.games.length; out.games.push({id:f.replace('.json',''),pid:PID});
+  const rid=f.replace('.json','');
+  const src=MAIN.has(rid)? 'main' : V2.has(rid)? 'v2' : 'other';
+  const gi=out.games.length; out.games.push({id:rid,pid:PID,src});
   let K=null, st=null, ki=-1, entries=[], ptr=0;
   const kyIdx=[];
   const tryMatch=(lastActor,tile)=>{
@@ -97,4 +106,6 @@ for(const k of out.kyokus){ k.ev=k.ev.join(' '); delete k.n; }
 const js='/* 復習半荘モード用データ（tools/local-ai/build-review.js が自動生成。手で編集しない）\n   共有された牌譜（Mortal のレビュー '+out.games.length+'半荘）の各局の進行と、あなたの判断ごとの本物の Mortal の評価 */\n'
   +'(function(root){ root.ML_REVIEW='+JSON.stringify(out)+'; })(typeof window!=="undefined"?window:globalThis);\n';
 fs.writeFileSync(path.join(__dirname,'../../local/review-data.js'),js);
+const cnt={}; out.games.forEach(g=>cnt[g.src]=(cnt[g.src]||0)+1);
+console.log('sources',JSON.stringify(cnt));
 console.log('games',out.games.length,'kyokus',out.kyokus.length,'entries',nEnt,'unmatched',nMiss,'size',(js.length/1024/1024).toFixed(2)+'MB');

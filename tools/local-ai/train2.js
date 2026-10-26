@@ -110,7 +110,7 @@ if(WRITE){
   const meta={games:files.length,decisions:sets[0].meta.length,testAgree:LAST?(LAST.agree*100).toFixed(1)+'%':'-',
     testDahai:LAST&&LAST.by.dahai?(100*LAST.by.dahai.top1/LAST.by.dahai.n).toFixed(1)+'%':'-',
     testCall:LAST&&LAST.by.call?(100*LAST.by.call.top1/LAST.by.call.n).toFixed(1)+'%':'-',
-    note:ALL?'全データで学習（一致率は全データ学習前のテスト値）':'テスト用の半荘を除いて学習',
+    note:ALL?'最終版は全'+files.length+'半荘で学習。一致率は、5半荘に1つをテスト用に除いて学習したときの、テスト用半荘でのMortal本家との一致率':'テスト用の半荘を除いて学習',
     trainedAt:new Date().toISOString().slice(0,10),H,perms:perms.length};
   if(ALL){ meta.testDahai=process.env.TEST_DAHAI||'-'; meta.testCall=process.env.TEST_CALL||'-'; meta.testRiichi=process.env.TEST_RIICHI||'-'; }
   if(process.env.TEST_AGREE) meta.testAgree=process.env.TEST_AGREE;
