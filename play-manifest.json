@@ -1,0 +1,13 @@
+{
+  "name": "ローカル麻雀（Mortal代役AI）",
+  "short_name": "ローカル麻雀",
+  "start_url": "./play.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#08201a",
+  "theme_color": "#0b2b20",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

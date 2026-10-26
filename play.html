@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0b2b20">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ローカル麻雀">
+<link rel="manifest" href="play-manifest.json">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>ローカル麻雀</title>
+<style>
+:root{
+  --bg:#08201a; --panel:#0f3328; --line:#235a47; --fg:#eef7f2; --muted:#9cc3b2;
+  --accent:#3ddc97; --gold:#ffd166; --bad:#ff4d4d; --btn:#1b4a3b;
+  --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
+  --sal:env(safe-area-inset-left,0px); --sar:env(safe-area-inset-right,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--fg);overflow:hidden;height:100%;
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;font-size:14px;line-height:1.45;
+  -webkit-text-size-adjust:100%;touch-action:manipulation}
+#probe{position:fixed;visibility:hidden;padding:var(--sat) var(--sar) var(--sab) var(--sal)}
+/* 回転コンテナ: 端末の向きに関係なく、選んだモード（縦／横）で表示する */
+#rot{position:fixed;left:0;top:0;transform-origin:0 0;overflow:hidden}
+#app{position:absolute;inset:0;overflow:hidden}
+.screen{position:absolute;inset:0;display:none;overflow:auto;-webkit-overflow-scrolling:touch}
+.screen.on{display:block}
+button{font:inherit;font-weight:700;border:none;border-radius:10px;padding:10px 12px;background:var(--btn);color:var(--fg);cursor:pointer;min-height:44px;touch-action:manipulation}
+button:active{filter:brightness(1.25)}
+button[disabled]{opacity:.4}
+.btn-p{background:var(--accent);color:#04241a}
+.btn-g{background:transparent;border:1px solid var(--line)}
+.btn-d{background:#7a2424;color:#ffe0e0}
+.btn-gold{background:var(--gold);color:#3a2800}
+.small{font-size:12px}.muted{color:var(--muted)}.center{text-align:center}
+img.tile{display:block;width:100%;height:auto;background:#f2f0ea;border-radius:12%;padding:6%;box-shadow:inset 0 0 0 1px rgba(0,0,0,.35)}
+/* ---------- ホームなど一般画面 ---------- */
+.page{padding:12px 14px 30px;max-width:760px;margin:0 auto}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px}
+.card h2{margin:0 0 6px;font-size:17px}
+.hbtn{display:block;width:100%;margin:8px 0;font-size:16px;padding:14px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.grow{flex:1}
+.topbar{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.topbar h1{font-size:17px;margin:0;flex:1}
+.item{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px}
+.badge{display:inline-block;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700;background:#1f4d3d}
+.b-false{background:#7a1f1f;color:#ffd6d6}.b-ok{background:#145c3c;color:#c9ffe5}.b-chk{background:#7a5a12;color:#ffe9b5}
+select,textarea,input{font:inherit;width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:#06170f;color:var(--fg);-webkit-user-select:text;user-select:text}
+label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
+.seg{display:flex;gap:6px}.seg button{flex:1;font-size:13px}.seg button.on{background:var(--accent);color:#04241a}
+/* ---------- 対局画面 ---------- */
+#game{overflow:hidden}
+#g-wrap{position:absolute;display:flex}
+#g-wrap.portrait{flex-direction:column}
+#g-wrap.landscape{flex-direction:row}
+#g-board{position:relative;flex:none;background:#0e3b2a}
+#g-board svg{display:block;width:100%;height:100%}
+#g-side{position:relative;flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
+#g-acts{flex:none;display:flex;gap:6px;align-items:center;justify-content:flex-end;padding:4px 6px;min-height:52px}
+#g-acts .msg{flex:1;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#g-acts button{min-width:62px;font-size:15px}
+.a-hora{background:#d63b3b;color:#fff}.a-reach{background:#d98a1c;color:#fff}.a-call{background:#2c6ed6;color:#fff}.a-skip{background:#4a5a55}
+#g-hand{flex:none;display:flex;align-items:flex-end;justify-content:center;padding:10px 4px 6px;gap:0}
+.ht{position:relative;flex:none;width:var(--tw);transition:transform .08s}
+.ht.sel{transform:translateY(-9px)}
+.ht.gap{margin-left:calc(var(--tw)*0.35)}
+.ht.ng img{filter:brightness(.55)}
+.ht.ok img{box-shadow:inset 0 0 0 2px var(--gold)}
+.ht .ub{position:absolute;left:0;right:0;bottom:100%;text-align:center;font-size:10px;color:var(--gold);line-height:1.1}
+#g-tools{flex:none;display:grid;grid-template-columns:repeat(3,1fr);gap:5px;padding:4px 6px}
+#g-tools button{font-size:11.5px;line-height:1.2;padding:4px 4px;min-height:44px;font-weight:700}
+#g-tools button.on{background:var(--accent);color:#04241a}
+#g-info{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:4px 8px 8px;min-height:0;font-size:13px}
+.ipanel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;margin-bottom:8px}
+.ipanel h3{margin:0 0 4px;font-size:13px}
+.trow{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+.trow .tw{width:20px}
+.trow .tw.big{width:24px}
+.chip{display:inline-block;border-radius:6px;padding:1px 6px;margin:2px;font-size:12px;background:#1d4436}
+.chip.on{background:#1f7a52}.chip.off{background:#4a2121;color:#ffd0d0;text-decoration:line-through}
+/* オーバーレイ（#g-side を覆う。卓は見えたまま） */
+.ov{position:absolute;inset:0;z-index:20;background:#04120d;display:flex;flex-direction:column}
+.ov .ovb{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:10px 12px}
+.ov .ovf{flex:none;display:flex;gap:8px;padding:8px 10px calc(8px)}
+.ov .ovf button{flex:1;font-size:16px;min-height:50px}
+.false{font-size:34px;font-weight:900;color:var(--bad);letter-spacing:2px;line-height:1}
+.okmark{font-size:22px;font-weight:900;color:var(--accent)}
+/* Mortal 風の候補一覧 */
+.cands{margin-top:6px}
+.cand{display:flex;align-items:center;gap:6px;padding:4px 2px;border-bottom:1px solid rgba(255,255,255,.06)}
+.cand .rk{width:16px;font-size:11px;color:var(--muted);text-align:right}
+.cand .ct{display:flex;align-items:center;gap:5px;width:118px;flex:none}
+.cand .ctile{width:22px}
+.cand .cn{font-size:13px}
+.cand .cbar{flex:1;height:10px;background:rgba(255,255,255,.07);border-radius:5px;overflow:hidden}
+.cand .cbar span{display:block;height:100%;background:#5aa0ff;border-radius:5px}
+.cand.best .cbar span{background:var(--accent)}
+.cand .cp{width:50px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px}
+.cand.mine{background:rgba(255,77,77,.12)}
+.cand.best.mine{background:rgba(61,220,151,.12)}
+.cand .cme{font-size:10px;background:var(--bad);color:#fff;border-radius:4px;padding:1px 4px}
+.cand.best.mine .cme{background:#1f7a52}
+.why{background:#0f2f24;border:1px solid #2f6b4f;border-left:4px solid var(--accent);border-radius:8px;padding:6px 8px;margin:8px 0}
+.why .wt{font-size:12px;font-weight:800;color:var(--accent);margin-bottom:2px}
+.why .wi{font-size:13px;line-height:1.45}
+.hbar{display:flex;align-items:flex-end;justify-content:center;gap:1px;margin:8px 0 2px}
+.hbar .c{display:flex;flex-direction:column;align-items:center;width:24px}
+.hbar .b{width:12px;background:var(--accent);border-radius:2px 2px 0 0}
+.hbar .p{font-size:9px;color:#cfeee0;height:12px}
+.hbar .c.mine .b{background:var(--bad)}
+.hbar .c.best img{box-shadow:inset 0 0 0 2px var(--accent)}
+.hbar .c.mine img{box-shadow:inset 0 0 0 2px var(--bad)}
+/* スジ表 */
+table.suji{border-collapse:collapse;width:100%;font-size:12px}
+table.suji td,table.suji th{border:1px solid var(--line);text-align:center;padding:0;height:40px}
+table.suji td button{width:100%;height:100%;min-height:40px;background:transparent;border-radius:0;font-size:16px;padding:0}
+table.suji td.ans-on{background:rgba(61,220,151,.18)}
+.counter{display:flex;align-items:center;gap:8px;justify-content:center;margin:6px 0}
+.counter .n{font-size:28px;font-weight:900;min-width:60px;text-align:center}
+.counter button{width:56px;font-size:22px}
+.res-hand{display:flex;flex-wrap:wrap;gap:1px;margin:6px 0}
+.res-hand .tw{width:24px}
+.toast{position:absolute;left:50%;top:12px;transform:translateX(-50%);background:#06170f;border:1px solid var(--line);padding:8px 12px;border-radius:10px;z-index:99;font-size:13px;max-width:90%}
+/* ビューア */
+#v-board{background:#0e3b2a;margin:0 auto}
+#v-board svg{display:block;width:100%;height:auto}
+.vctl{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin:6px 0}
+.vctl button{font-size:13px;padding:6px 2px}
+</style>
+</head>
+<body>
+<div id="probe"></div>
+<div id="rot"><div id="app">
+  <!-- ホーム -->
+  <section id="home" class="screen"></section>
+  <!-- 対局 -->
+  <section id="game" class="screen">
+    <div id="g-wrap">
+      <div id="g-board"></div>
+      <div id="g-side">
+        <div id="g-acts"></div>
+        <div id="g-hand"></div>
+        <div id="g-tools"></div>
+        <div id="g-info"></div>
+      </div>
+    </div>
+  </section>
+  <!-- 牌譜一覧・ビューア・要チェック・設定 -->
+  <section id="logs" class="screen"></section>
+  <section id="viewer" class="screen"></section>
+  <section id="checks" class="screen"></section>
+  <section id="settings" class="screen"></section>
+</div></div>
+<script>window.ML_TILEDIR='tiles/';</script>
+<script src="local/mj-core.js"></script>
+<script src="local/ai-weights.js"></script>
+<script src="local/mj-ai.js"></script>
+<script src="local/mj-game.js"></script>
+<script src="local/store.js"></script>
+<script src="local/ui-common.js"></script>
+<script src="local/tenhou-export.js"></script>
+<script src="local/play.js"></script>
+</body>
+</html>

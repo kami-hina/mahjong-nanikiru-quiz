@@ -2,3 +2,9 @@
 *.png
 sample-report.json
 .playwright-mcp/
+
+tools/majsoul/profile/
+tools/majsoul/out/
+
+# ローカル麻雀の学習用キャッシュ（Mortalレポート・特徴量）
+.cache/

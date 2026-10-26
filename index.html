@@ -102,12 +102,14 @@ img.shot{width:100%;border-radius:10px;border:1px solid var(--line)}
   <button data-tab="quiz" class="on"><span class="ico">🀄️</span>クイズ</button>
   <button data-tab="add"><span class="ico">＋</span>取り込み</button>
   <button data-tab="list"><span class="ico">📚</span>一覧</button>
+  <button data-tab="local"><span class="ico">🎮</span><span style="display:block;font-size:10px;line-height:1.15">ローカル<br>プレイ結果</span></button>
   <button data-tab="settings"><span class="ico">⚙️</span>設定</button>
 </nav>
 <script src="qa.js"></script>
+<script src="local/store.js"></script>
 <script>
 "use strict";
-const APP_VERSION='2026-10-18c';
+const APP_VERSION='2026-10-26a';
 /* ========================= 小物 ========================= */
 const $=(s,r)=>(r||document).querySelector(s), $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -677,7 +679,7 @@ function boardSVG(rec,reveal){
 let TAB='quiz'; const view=$('#view');
 $$('nav button').forEach(b=>b.addEventListener('click',()=>{TAB=b.dataset.tab;$$('nav button').forEach(x=>x.classList.toggle('on',x===b));render();}));
 function render(){ window.scrollTo(0,0);
-  if(TAB==='quiz') renderQuiz(); else if(TAB==='add') renderAdd(); else if(TAB==='list') renderList(); else renderSettings(); }
+  if(TAB==='quiz') renderQuiz(); else if(TAB==='add') renderAdd(); else if(TAB==='list') renderList(); else if(TAB==='local') renderLocal(); else renderSettings(); }
 function countsOf(a){ const s={total:a.length,new:0,wrong:0,correct:0,review:0};
   a.forEach(r=>{ if(r.review)s.review++; if(r.status==='wrong')s.wrong++; else if(r.status==='correct')s.correct++; else s.new++; }); return s; }
 async function stats(){ return countsOf(await uniqRecs()); }
@@ -841,7 +843,7 @@ function askInfo(r){
   const st=r.st||{}, q=r.q||{};
   return {round:st.roundText||'', junme:st.junme||0, seat:st.seatText||'', question:questionText(r),
     hand:(st.hand||[]).map(tileName).join(' '), drawn:st.drawn?tileName(st.drawn):'',
-    actual:q.actualText||tileName(q.actual), mortal:q.answerText||tileName(q.answer), srcUrl:r.srcUrl||''};
+    actual:q.actualText||tileName(q.actual), mortal:q.answerText||tileName(q.answer), srcUrl:(r.src==='local'?'':r.srcUrl||'')};
 }
 async function addMsg(rec,from,text){
   const now=Date.now();
@@ -947,7 +949,7 @@ async function renderAskList(){
 function askShareText(r){
   const st=r.st||{}, hand=(st.hand||[]).map(tileName).join(' ');
   const q=askMsgs(r).filter(m=>m.from==='hina').pop();
-  return `【${st.roundText||''}${st.junme?' '+st.junme+'巡目':''}】${questionText(r)}\n手牌：${hand}${st.drawn?'　ツモ：'+tileName(st.drawn):''}\n${r.srcUrl?r.srcUrl+'\n':''}質問：${q?q.text:''}`;
+  return `【${st.roundText||''}${st.junme?' '+st.junme+'巡目':''}】${questionText(r)}\n手牌：${hand}${st.drawn?'　ツモ：'+tileName(st.drawn):''}\n${r.srcUrl&&r.src!=='local'?r.srcUrl+'\n':''}質問：${q?q.text:''}`;
 }
 // 各問題の画面に出す「磯部さんに質問」欄（やり取りの履歴つき）
 function askBoxHTML(rec){
@@ -1050,7 +1052,7 @@ function candListHTML(q){
   const cs=(q.candidates||[]).filter(c=>c.prob>=0.005).slice(0,6);
   if(!cs.length) return '';
   const max=cs[0].prob||1;
-  return `<div style="margin-top:10px"><div class="small muted" style="margin-bottom:4px">Mortalの評価</div>`+
+  return `<div style="margin-top:10px"><div class="small muted" style="margin-bottom:4px">${q.engine?'Mortal代役AI（ローカル対局）の評価':'Mortalの評価'}</div>`+
     cs.map((c,i)=>`<div class="cand">
       ${c.tile?`<div class="tw" style="width:26px">${tileSVG(c.tile)}</div>`:''}
       <div style="width:${c.tile?'70px':'104px'};font-size:13px">${esc(c.tile?tileName(c.tile):c.text)}</div>
@@ -1081,7 +1083,7 @@ function drawQuiz(){
   } else {
     const sev=q.severity!=null? `（推奨との確率差 ${Math.round(q.severity*100)}pt）`:'';
     ans.innerHTML=`<div class="expl">
-        <b>Mortalの推奨：${esc(q.answerText||tileName(q.answer))}</b>${q.candidates&&q.candidates[0]?`（${(q.candidates[0].prob*100).toFixed(1)}%）`:''}<br>
+        <b>${q.engine?'Mortal代役の推奨':'Mortalの推奨'}：${esc(q.answerText||tileName(q.answer))}</b>${q.candidates&&q.candidates[0]?`（${(q.candidates[0].prob*100).toFixed(1)}%）`:''}<br>
         実戦：${esc(q.actualText||tileName(q.actual))}${sev}
         ${q.shanten!=null?`<br>この時点：${q.shanten===0?'テンパイ':q.shanten+'向聴'}${q.furiten?' / フリテン':''}`:''}
       </div>
@@ -1089,7 +1091,7 @@ function drawQuiz(){
     det.innerHTML=`${candListHTML(q)}
       ${q.explanation?`<div class="expl">${esc(q.explanation)}</div>`:''}
       ${CFG.key?`<button class="btn-ghost btn-block btn-sm" id="ai" style="margin-top:10px">AIに理由を解説してもらう（APIを使用）</button>`:''}
-      ${rec.srcUrl?`<p class="small muted" style="margin-top:8px"><a href="${esc(rec.srcUrl)}" target="_blank" rel="noopener">元の検討ページを開く</a></p>`:''}`;
+      ${rec.srcUrl?`<p class="small muted" style="margin-top:8px"><a href="${esc(rec.srcUrl)}" target="_blank" rel="noopener">${rec.src==='local'?'この局面を牌譜（ローカル対局）で開く':'元の検討ページを開く'}</a></p>`:''}`;
     act.innerHTML=`<div class="small muted center" style="margin-bottom:6px">自己採点（リストに振り分けます）</div>
       <div class="row">
         <button class="btn-primary grow" id="ok">◯ 正解だった</button>
@@ -1158,8 +1160,8 @@ function renderAdd(){
   view.innerHTML=`
   <div class="card">
     <h2>Mortalの検討URLから取り込む</h2>
-    <p class="small muted">mjai.ekyu.moe の検討ページのURLを貼り付けてください。AIの推奨と食い違った局面（error）だけを抽出して問題にします。<b>APIトークンは使いません（無料）</b>。<br><b>1行に1つずつ書けば、何件でもまとめて取り込めます。</b><br><b>天鳳の牌譜URL（tenhou.net/0/?log=…）や、天鳳Web版の保存データ（log0={…}）もそのまま貼れます。</b>Mortalの解析画面を入力済みで開くので、「送信」して結果URLを貼り戻すだけです。</p>
-    <textarea id="url" rows="4" placeholder="https://mjai.ekyu.moe/killerducky/?data=/report/xxxx.json&#10;https://tenhou.net/0/?log=2026101221gm-0009-0000-xxxxxxxx&amp;tw=0">${esc(CFG.lastUrl)}</textarea>
+    <p class="small muted">mjai.ekyu.moe の検討ページのURLを貼り付けてください。AIの推奨と食い違った局面（error）だけを抽出して問題にします。<b>APIトークンは使いません（無料）</b>。<br><b>1行に1つずつ書けば、何件でもまとめて取り込めます。</b><br><b>天鳳の牌譜URL（tenhou.net/0/?log=…）、雀魂の牌譜URL（game.mahjongsoul.com/?paipu=…）、天鳳Web版の保存データ（log0={…}）もそのまま貼れます。</b>Mortalの解析画面を入力済みで開くので、「送信」して結果URLを貼り戻すだけです。</p>
+    <textarea id="url" rows="4" placeholder="https://mjai.ekyu.moe/killerducky/?data=/report/xxxx.json&#10;https://tenhou.net/0/?log=2026101221gm-0009-0000-xxxxxxxx&amp;tw=0&#10;https://game.mahjongsoul.com/?paipu=261025-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx_axxxxxxxxx">${esc(CFG.lastUrl)}</textarea>
     <label>取り込む範囲</label>
     <select id="sev">
       <option value="0">すべてのミス</option>
@@ -1206,7 +1208,7 @@ function drawSources(){
   if(!l.length){ box.innerHTML='<p class="small muted">まだありません。</p>'; return; }
   box.innerHTML=l.map((x,i)=>`<div class="queue-item">
       <div class="small" style="word-break:break-all">${esc(x.url)}</div>
-      ${x.tenhou?`<div class="small muted" style="word-break:break-all">天鳳：${esc(x.tenhou)}</div>`:''}
+      ${x.tenhou?`<div class="small muted" style="word-break:break-all">牌譜：${esc(x.tenhou)}</div>`:''}
       <div class="row" style="margin-top:6px">
         <span class="small muted">${new Date(x.at).toLocaleDateString('ja-JP')}・${x.count||'?'}問</span>
         <span class="grow"></span>
@@ -1250,7 +1252,8 @@ function showDup(box,dup,retry){
   $('#force').addEventListener('click',retry);
 }
 // 複数URLをまとめて取り込む
-async function bulkImport(urls,force){
+async function bulkImport(urls,force,pairs){
+  pairs=pairs||{};
   const box=$('#imp');
   const thr=parseFloat(($('#sev')&&$('#sev').value)||'0');
   const res={ok:0,dup:0,fail:0,added:0,updated:0,skip:0,notes:[]};
@@ -1262,14 +1265,15 @@ async function bulkImport(urls,force){
     catch(e){ res.fail++; res.notes.push(['×',raw,e.message]); continue; }
     if(!force){
       const dup=await alreadyImported(id);
-      if(dup){ res.dup++; res.notes.push(['済',raw,'すでにアップロード済み']); continue; }
+      if(dup){ res.dup++; res.notes.push(['済',raw,'すでにアップロード済み']); if(pairs[raw]) removePending(pairs[raw]); continue; }
     }
     try{
       const rp=await fetchReport(url,m=>{box.innerHTML=`<span class="spin"></span> ${esc(m)}（${i+1}/${urls.length}）`;});
       let probs=extractProblems(rp,raw,id);
       if(thr>0) probs=probs.filter(x=>x.q.severity==null||x.q.severity>=thr);
       const r2=await saveProblems(probs);
-      addSource({url:raw,reportId:id,at:Date.now(),count:probs.length});
+      addSource({url:raw,reportId:id,at:Date.now(),count:probs.length,tenhou:pairs[raw]});
+      if(pairs[raw]) removePending(pairs[raw]);
       res.ok++; res.added+=r2.added; res.updated+=r2.updated; res.skip+=r2.dup;
       res.notes.push(['◯',raw,probs.length+'問'+(r2.dup?`（うち重複 ${r2.dup}問はスキップ）`:'')]);
     }catch(e){ res.fail++; res.notes.push(['×',raw,e.message]); }
@@ -1285,7 +1289,7 @@ async function bulkImport(urls,force){
     </div>
     ${res.added?`<button class="btn-primary btn-block btn-sm" id="tostart" style="margin-top:8px">クイズを開始する</button>`:''}
   </div>`;
-  drawSources();
+  drawSources(); drawPending();
   const b=$('#tostart'); if(b) b.addEventListener('click',()=>{QUIZ=null;TAB='quiz';$$('nav button').forEach(x=>x.classList.toggle('on',x.dataset.tab==='quiz'));render();});
 }
 async function doImport(force){
@@ -1296,18 +1300,25 @@ async function doImport(force){
   const saved=tenhouFromStorage(input);
   if(saved.length) lines=saved;
   if(!lines.length){ box.innerHTML=`<span style="color:var(--bad)">URLを入力してください</span>`; return; }
-  const tenhou=lines.filter(isTenhouUrl);
+  // 「牌譜URL <タブ/空白> Mortal結果URL」のペア行（tools/majsoul/mortal-review.js の出力）なら、牌譜URLを紐づけて取り込む
+  const pairs={};
+  input.split(/\n/).forEach(ln=>{
+    const a=ln.match(/https?:\/\/\S*(?:paipu=|log=)\S*/), b=ln.match(/https?:\/\/\S*(?:mjai\.ekyu\.moe|\.json)\S*/);
+    if(a&&b&&a[0]!==b[0]) pairs[b[0]]=a[0];
+  });
+  const paired=new Set(Object.values(pairs));
+  const tenhou=lines.filter(x=>isTenhouUrl(x)&&!paired.has(x));
   if(tenhou.length){
     const r=addPending(tenhou);
     if(r.added.length===1) window.open(mortalFormUrl(r.added[0]),'_blank');
     drawPending();
     lines=lines.filter(x=>!isTenhouUrl(x));
     if(!lines.length){
-      box.innerHTML=`<div class="queue-item small">天鳳の牌譜を <b>${r.added.length}件</b> 登録しました${r.dup?`（すでに取り込み済み：${r.dup}件）`:''}。<br>下の「Mortal解析待ち」で <b>①解析</b> →「送信」→ 結果URLをコピー → <b>②貼り付け</b> の順に進めてください。</div>`;
+      box.innerHTML=`<div class="queue-item small">天鳳／雀魂の牌譜を <b>${r.added.length}件</b> 登録しました${r.dup?`（すでに取り込み済み：${r.dup}件）`:''}。<br>下の「Mortal解析待ち」で <b>①解析</b> →「送信」→ 結果URLをコピー → <b>②貼り付け</b> の順に進めてください。</div>`;
       return;
     }
   }
-  if(lines.length>1) return bulkImport(lines,force);
+  if(lines.length>1||Object.keys(pairs).length) return bulkImport(lines,force,pairs);
   let url;
   try{ url=reportUrlFrom(lines[0]); }catch(e){ box.innerHTML=`<span style="color:var(--bad)">${esc(e.message)}</span>`; return; }
   const id=(url.match(/([0-9a-f]{6,})\.json/i)||[,'rep'])[1];
@@ -1349,8 +1360,9 @@ async function ingest(rep,srcUrl,reportId,box,force,extra){
    mjai.ekyu.moe は人間確認（Cloudflare Turnstile）付きで外から自動送信できないため、
    牌譜URLを入力済みの状態で開き、「送信」後の結果URLを貼り戻してもらう */
 const LS_TENHOU='mq.tenhou.v1';
-const isTenhouUrl=s=>/tenhou\.net\/\d+\/?\?.*log=/.test(s);
-const tenhouKey=s=>{ const m=s.match(/log=([\w-]+)/), t=s.match(/[?&]tw=(\d)/); return m? m[1]+'@'+(t?t[1]:'') : s; };
+const isMajsoulUrl=s=>/(mahjongsoul|maj-soul)\.com\/.*paipu=/.test(s);
+const isTenhouUrl=s=>/tenhou\.net\/\d+\/?\?.*log=/.test(s)||isMajsoulUrl(s);
+const tenhouKey=s=>{ const p=s.match(/paipu=([\w-]+)/); if(p) return p[1]; const m=s.match(/log=([\w-]+)/), t=s.match(/[?&]tw=(\d)/); return m? m[1]+'@'+(t?t[1]:'') : s; };
 const getPending=()=>lsGet(LS_TENHOU,[])||[];
 const mortalFormUrl=u=>'https://mjai.ekyu.moe/ja.html?url='+encodeURIComponent(u);
 // 天鳳Web版の localStorage（log0={"log":"…","oya":2,…}）を貼られたら牌譜URLに直す
@@ -1377,7 +1389,8 @@ function drawPending(){
   const box=$('#pend'); if(!box) return;
   const l=getPending();
   if(!l.length){ box.innerHTML=''; return; }
-  const name=u=>{ const m=u.match(/log=(\d{10})gm-[\w]+-[\w]+-([0-9a-f]+)/); return m? `${m[1].slice(0,4)}/${m[1].slice(4,6)}/${m[1].slice(6,8)} ${m[1].slice(8,10)}時 (${m[2].slice(0,6)})` : u; };
+  const name=u=>{ const j=u.match(/paipu=(\d{2})(\d{2})(\d{2})-([0-9a-f]{8})/); if(j) return `雀魂 20${j[1]}/${j[2]}/${j[3]} (${j[4].slice(0,6)})`;
+    const m=u.match(/log=(\d{10})gm-[\w]+-[\w]+-([0-9a-f]+)/); return m? `${m[1].slice(0,4)}/${m[1].slice(4,6)}/${m[1].slice(6,8)} ${m[1].slice(8,10)}時 (${m[2].slice(0,6)})` : u; };
   box.innerHTML=`<h2 style="margin-top:14px">Mortal解析待ち（${l.length}件）</h2>
     <p class="small muted">①でMortalを開いて「送信」→ 表示された画面のURLをコピー → ②で取り込みます。</p>`
     + l.map((x,i)=>`<div class="queue-item">
@@ -1506,6 +1519,7 @@ function srcNoMap(){
 function srcLabel(r){
   if(!r) return '';
   if(r.src==='image') return '画像から取り込み';
+  if(r.src==='local') return 'ローカル対局 '+new Date(r.createdAt||0).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
   const id=r.reportId||'';
   const no=srcNoMap().get(id);
   if(no) return '牌譜'+no;
@@ -1581,7 +1595,7 @@ async function openDetail(id){
       ${candListHTML(r.q)}
       ${r.q.explanation?`<div class="expl">${esc(r.q.explanation)}</div>`:''}
       ${r.image?`<details><summary>元の画像</summary><img class="shot" src="${r.image}"></details>`:''}
-      ${r.srcUrl?`<p class="small muted" style="margin-top:8px"><a href="${esc(r.srcUrl)}" target="_blank" rel="noopener">元の検討ページ</a></p>`:''}
+      ${r.srcUrl?`<p class="small muted" style="margin-top:8px"><a href="${esc(r.srcUrl)}" target="_blank" rel="noopener">${r.src==='local'?'牌譜（ローカル対局）で開く':'元の検討ページ'}</a></p>`:''}
       <div class="row" style="margin-top:12px">
         <button class="${r.review?'btn-warn':'btn-ghost'} grow" id="rev">${r.review?'★ 要復習を解除':'☆ 要復習にする'}</button>
         <button class="btn-ghost" id="reset">未出題に戻す</button></div>
@@ -1591,6 +1605,73 @@ async function openDetail(id){
   $('#rev').addEventListener('click',async()=>{r.review=!r.review;await dbPut(r);openDetail(id);});
   $('#reset').addEventListener('click',async()=>{r.status='new';await dbPut(r);toast('未出題に戻しました');openDetail(id);});
   $('#del').addEventListener('click',async()=>{if(!confirm('削除しますか？'))return;await dbDel(id);toast('削除しました');renderList();});
+}
+
+/* ---------- ローカルプレイ結果（play.html のローカル麻雀と連携） ----------
+   ・ローカル麻雀は同じ端末の IndexedDB（mahjong-local）に牌譜・判断・メモを保存している
+   ・Mortal代役AIの推奨と違った判断（FALSE）と、メモ記入した局面を、何切るクイズの問題として取り込む
+   ・一度取り込んだ問題は、こちらで削除しても再取り込みしない */
+const LS_LOCAL_SYNC='mq.local.synced.v1';
+async function syncLocal(){
+  if(!window.MLStore) return {games:[],memos:[],added:0};
+  let games=[], memos=[];
+  try{ games=await MLStore.listGames(); memos=await MLStore.listMemos(); }catch(e){ return {games,memos,added:0}; }
+  const done=new Set(lsGet(LS_LOCAL_SYNC,[])||[]);
+  const memoQ=new Set(memos.filter(m=>m.q).map(m=>m.q.id));
+  const probs=[];
+  for(const g of games) for(const d of (g.decisions||[])){
+    if(!d.q||done.has(d.q.id)) continue;
+    const p=JSON.parse(JSON.stringify(d.q));
+    if(d.memo||memoQ.has(p.id)) p.review=true;
+    probs.push(p);
+  }
+  for(const m of memos) if(m.q&&!done.has(m.q.id)&&!probs.some(p=>p.id===m.q.id)){ const p=JSON.parse(JSON.stringify(m.q)); p.review=true; probs.push(p); }
+  let added=0;
+  if(probs.length){ const r=await saveProblems(probs); added=r.added; probs.forEach(p=>done.add(p.id)); lsSet(LS_LOCAL_SYNC,[...done]); await flush(); }
+  // メモした局面は「要復習」に入れる（1回だけ。あとで外したらそのまま）
+  const marked=new Set(lsGet('mq.local.memomark.v1',[])||[]); let ch=false;
+  for(const id of memoQ){ if(marked.has(id)) continue; const r=MEM.get(id); if(r){ if(!r.review){ r.review=true; await dbPut(r); } marked.add(id); ch=true; } }
+  if(ch) lsSet('mq.local.memomark.v1',[...marked]);
+  return {games,memos,added};
+}
+async function renderLocal(){
+  view.innerHTML='<p class="muted center"><span class="spin"></span> 読み込み中…</p>';
+  const {games,memos,added}=await syncLocal();
+  const groups=new Map((await srcGroups()).map(g=>[g.key,g]));
+  const open=memos.filter(m=>!m.checked);
+  view.innerHTML=`<div class="card">
+      <h2>ローカルプレイ結果</h2>
+      <p class="small muted">ローカル麻雀（Mortal代役AI×3との半荘戦・オフライン）の牌譜です。Mortal代役の推奨と違った判断（FALSE）とメモ記入した局面は、何切るクイズの問題として自動で取り込みます。各問題の画面から磯部さんにも質問できます。</p>
+      ${added?`<p class="small" style="color:var(--accent)">新しく ${added}問 を取り込みました。</p>`:''}
+      <a href="play.html" style="text-decoration:none"><button class="btn-primary btn-block">ローカル麻雀で遊ぶ</button></a>
+    </div>
+    <div class="card">
+      <h2 style="font-size:16px">要チェック（メモ記入した局面）</h2>
+      <p class="small muted">未チェック ${open.length}件 / 全${memos.length}件</p>
+      ${memos.slice(0,30).map(m=>`<div class="queue-item">
+        <div class="row" style="gap:6px"><b class="small">${esc(m.kyokuLabel||'')}</b>${m.decision?(m.decision.ok?'<span class="badge b-correct">OK</span>':'<span class="badge b-wrong">FALSE</span>'):''}
+          ${m.checked?'<span class="badge b-done">チェック済み</span>':'<span class="badge b-review">要チェック</span>'}<span class="grow"></span><span class="small muted">${fmtDT(m.createdAt)}</span></div>
+        <div style="white-space:pre-wrap;margin:4px 0">${esc(m.text||'')}</div>
+        <div class="row">${m.q&&MEM.get(m.q.id)?`<button class="btn-ghost btn-sm grow" data-lq="${esc(m.q.id)}">問題として解く・質問する</button>`:''}
+          <a href="play.html#game=${encodeURIComponent(m.gameId)}" target="_blank" rel="noopener"><button class="btn-ghost btn-sm">牌譜で見る</button></a></div>
+      </div>`).join('')||'<p class="small muted">まだありません。</p>'}
+    </div>
+    <div class="card">
+      <h2 style="font-size:16px">対局一覧（${games.length}半荘）</h2>
+      ${games.map(g=>{ const r=g.result, my=r? r.order.indexOf(0)+1:null, dec=g.decisions||[], f=dec.filter(d=>!d.ok).length;
+        const key='local-'+g.id, gr=groups.get(key);
+        return `<div class="queue-item">
+          <div class="row"><b>${fmtDT(g.createdAt)}</b><span class="grow"></span>${g.finished&&r?`<span class="badge ${my===1?'b-correct':'b-new'}">${my}位 ${r.scores[0]}点（${r.final[0]>0?'+':''}${r.final[0]}）</span>`:`<span class="badge b-wait">途中 ${esc(g.kyokuLabel||'')}</span>`}</div>
+          <div class="small muted">あなたの判断 ${dec.length}回 ／ FALSE ${f}回${dec.length?`（一致率 ${((1-f/dec.length)*100).toFixed(1)}%）`:''}</div>
+          ${gr?countsHTML(gr.c):''}
+          <div class="row" style="margin-top:6px">
+            <button class="btn-primary btn-sm grow" data-lsrc="${esc(key)}" ${gr?'':'disabled'}>この半荘の問題を解く（${gr?gr.c.total:0}問）</button>
+            <a href="play.html#game=${encodeURIComponent(g.id)}" target="_blank" rel="noopener"><button class="btn-ghost btn-sm">牌譜を見る</button></a></div>
+        </div>`; }).join('')||'<p class="small muted">まだ対局がありません。「ローカル麻雀で遊ぶ」から半荘を始めてください。</p>'}
+    </div>`;
+  $$('[data-lsrc]').forEach(b=>b.addEventListener('click',()=>{ TAB='quiz'; $$('nav button').forEach(x=>x.classList.toggle('on',x.dataset.tab==='quiz')); QSRC=b.dataset.lsrc; QUIZ=null; renderQuiz(); }));
+  $$('[data-lq]').forEach(b=>b.addEventListener('click',async()=>{ const r=await dbGet(b.dataset.lq); if(!r) return;
+    TAB='quiz'; $$('nav button').forEach(x=>x.classList.toggle('on',x.dataset.tab==='quiz')); QUIZ={rec:r,reveal:false,mode:'auto'}; drawQuiz(); }));
 }
 
 /* ---------- 設定 ---------- */
@@ -1668,6 +1749,7 @@ async function renderSettings(){
   <p class="small muted center" style="margin-top:10px">麻雀 何切るクイズ / データは端末内のみ</p>`;
   $('#model').value=CFG.model;
   $('#reloadapp').addEventListener('click',async()=>{ await flush();
+    try{ const r=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration(); if(r) await r.update(); }catch(e){}
     location.replace(location.pathname+'?v='+Date.now()); });
   $('#persist').addEventListener('click',async()=>{ await askPersist();
     toast(DIAG.persisted===true?'永続ストレージが許可されました':'この環境では許可されませんでした（ホーム画面に追加すると通りやすくなります）',4000);
@@ -1701,6 +1783,8 @@ async function renderSettings(){
 }
 async function boot(){
   await loadAll();
+  try{ await syncLocal(); }catch(e){}
+  if(/^#local/.test(location.hash)){ TAB='local'; $$('nav button').forEach(x=>x.classList.toggle('on',x.dataset.tab==='local')); }
   render();
   askPersist();
   pullAsk(true);
@@ -1711,6 +1795,8 @@ async function boot(){
     toast('この環境ではデータを保存できません。プライベートブラウズを解除するか、ホーム画面に追加してください',7000);
 }
 boot();
+// オフライン対応（ローカル麻雀と共通の Service Worker）
+if('serviceWorker' in navigator&&location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
 </body>
 </html>
