@@ -270,7 +270,9 @@ function eventText(ev,names){
     case 'ankan': return n(ev.actor)+' 暗槓 '+t(ev.consumed[0]);
     case 'kakan': return n(ev.actor)+' 加槓 '+t(ev.pai);
     case 'dora': return '新ドラ表示 '+t(ev.dora_marker);
-    case 'hora': return n(ev.actor)+(ev.actor===ev.target?' ツモ和了 ':' ロン和了 ')+ev.points+'点（'+ev.yaku.map(y=>y[0]).join('・')+'）';
+    case 'hora': { const pts=ev.points!=null? ev.points : (ev.deltas? ev.deltas[ev.actor] : null);
+      const yk=(ev.yaku&&ev.yaku.length)? '（'+ev.yaku.map(y=>y[0]).join('・')+'）' : '';
+      return n(ev.actor)+(ev.actor===ev.target?' ツモ和了':' ロン和了')+(pts!=null?' '+pts+'点':'')+yk; }
     case 'ryukyoku': return '流局（'+ev.reason+'）';
     case 'end_kyoku': return '局終了';
     case 'end_game': return '対局終了';

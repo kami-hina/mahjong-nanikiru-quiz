@@ -11,7 +11,7 @@ Mortal 本体（ニューラルネット）はブラウザで動かせないた�
 
 ```sh
 cd tools/local-ai
-node fetch-reports.js ../../.cache/reports        # Mortal のレポートを取得（取得済みは飛ばす）
+node fetch-reports.js ../../.cache/reports        # Mortal のレポートと、天鳳URLの牌譜（.cache/tenhou）を取得（取得済みは飛ばす）
 node featurize.js ../../.cache/reports ../../.cache/feat --perms 0,1,2   # 特徴量を計算（並列）
 node train2.js ../../.cache/feat --perms 0,1,2 --H 32 --epochs 10 --l2 1e-4   # 学習用/テスト用に分けて精度を確認
 TEST_AGREE=77.9% node train2.js ../../.cache/feat --perms 0,1,2 --H 32 --epochs 10 --l2 1e-4 --all --write  # 全データで学習して local/ai-weights.js に書き出す（TEST_AGREE は直前のテスト一致率）
@@ -31,6 +31,8 @@ node selfplay.js 5                                          # AI 4人で半荘�
 | `train2.js` | 線形＋隠れ層1つのモデルを、Mortal の確率分布との交差エントロピーで学習 |
 | `analyze.js` / `debug.js` | Mortal と食い違った局面の表示、特定の手牌の特徴量の確認 |
 | `rules-test.js` / `selfplay.js` | 対局エンジンのテスト |
+| `tenhou6.js` / `tenhou6-test.js` | 天鳳形式の牌譜をイベント列に変換（レポート内の mjai ログと全件一致を確認するテスト付き） |
+| `build-review.js` | 復習半荘のデータ（牌譜データ.json・v3 は復習半荘、v2 は学習用モード）を作る |
 
 ## 精度の目安
 

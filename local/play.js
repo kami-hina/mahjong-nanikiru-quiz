@@ -8,7 +8,7 @@ const esc=UI.esc;
 const HUMAN=0; let CPU_MS=300;
 const ABORT={abort:true};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const VERSION='2026-10-26e';
+const VERSION='2026-10-26f';
 
 /* ================= 設定 ================= */
 const CFG_KEY='ml.cfg.v1';
@@ -570,7 +570,7 @@ function showFalse(P,choice){
     const best=P.list[0];
     overlay(`<div class="ovb">
       <div class="row"><span class="false">FALSE</span><span class="grow"></span><span class="small muted">${esc(decisionTitle(P))}</span></div>
-      <div style="margin-top:6px">あなた：<b style="color:#ff8a8a">${esc(UI.actionText(choice,HUMAN))}</b>　${P.review?'Mortal（本物）':'Mortal代役'}の推奨：<b style="color:var(--accent)">${esc(UI.actionText(best.action,HUMAN))}</b>（${(best.prob*100).toFixed(1)}%）</div>
+      <div style="margin-top:6px">あなた：<b style="color:#ff8a8a">${esc(UI.actionText(choice,HUMAN))}</b>　${P.review&&!P.sub?'Mortal（本物）':P.sub?'Mortal代役（この半荘はMortal未解析）':'Mortal代役'}の推奨：<b style="color:var(--accent)">${esc(UI.actionText(best.action,HUMAN))}</b>（${(best.prob*100).toFixed(1)}%）</div>
       ${P.review&&P.actual?`<div class="small muted">実戦（実際の牌譜）：${esc(UI.actionText(P.actual,HUMAN))}${AI.actKey(P.actual)===AI.actKey(best.action)?'（実戦では正解していました）':''}</div>`:''}
       ${whyHTML(P.why)}
       ${handBarsHTML(P,choice)}
@@ -587,7 +587,7 @@ function showHint(){
   PEND.hinted=true;
   const P=PEND;
   overlay(`<div class="ovb">
-    <div class="row"><b style="font-size:16px">${P.review?'Mortal（本物）の解析':'Mortal代役の評価'}</b><span class="grow"></span><span class="small muted">${esc(decisionTitle(P))}</span></div>
+    <div class="row"><b style="font-size:16px">${P.review&&!P.sub?'Mortal（本物）の解析':P.sub?'Mortal代役の評価（この半荘はMortal未解析）':'Mortal代役の評価'}</b><span class="grow"></span><span class="small muted">${esc(decisionTitle(P))}</span></div>
     <div style="margin-top:4px">推奨：<b style="color:var(--accent)">${esc(UI.actionText(P.list[0].action,HUMAN))}</b>（${(P.list[0].prob*100).toFixed(1)}%）</div>
     ${whyHTML(AI.explain(P.obs,P.list,null),'推奨打牌選定理由（次点の '+UI.actionText((P.list[1]||P.list[0]).action,HUMAN)+' との比較）')}
     ${handBarsHTML(P,null)}
@@ -904,7 +904,7 @@ async function rvPrompt(e,F){
   const ek=AI.actKey(expected); const ei=list.findIndex(c=>AI.actKey(c.action)===ek);
   if(ei>0){ const x=list.splice(ei,1)[0]; list.unshift(x); } else if(ei<0) list.unshift({action:expected,prob:1});
   const kind=myTurn? (prevTok[0]==='r'?'riichi_discard':'self') : 'react';
-  PEND={kind,obs,actions:legal,list,i:RV.base+1+RV.fi,memoIds:[],hinted:false,tile:ctx.tile,from:ctx.from,review:true,expected,actual};
+  PEND={kind,obs,actions:legal,list,i:RV.base+1+RV.fi,memoIds:[],hinted:false,tile:ctx.tile,from:ctx.from,review:true,sub:!!(e.sub||RV.cur.K.sub),expected,actual};
   SEL=-1; SUBMENU=null; RSEL=false; PRESEL=null;
   const pr=new Promise(res=>{ PEND.resolve=res; });
   renderGame();
@@ -917,7 +917,7 @@ async function rvPrompt(e,F){
   P.why=why; P.decided=true;
   const n=REC.decisions.length;
   REC.decisions.push({n,i:P.i,kind,list:P.list.slice(0,10).map(c=>({a:c.action,p:+(+c.prob).toFixed(5)})),chosen:choice,ok,actual,actualOk:AI.actKey(actual)===ek,
-    hinted:P.hinted,at:Date.now(),kyoku:kyokuLabel(),why,src:{g:RV.cur.K.g,ki:RV.cur.K.ki},mortal:true});
+    hinted:P.hinted,at:Date.now(),kyoku:kyokuLabel(),why,src:{g:RV.cur.K.g,ki:RV.cur.K.ki},mortal:!P.sub,sub:!!P.sub});
   for(const id of P.memoIds){ const ms=await Store.listMemos(); const m=ms.find(x=>x.id===id); if(m){ m.decision={chosen:choice,ok,n}; m.why=why; await Store.saveMemo(m); } }
   if(!ok&&CFG.judge!=='off'){ const r=await showFalse(P,choice); if(r===ABORT){ PEND=null; return ABORT; } }
   PEND=null;
@@ -987,7 +987,7 @@ async function renderReviewList(set){
     <p class="small muted">${set==='v2'?'牌譜データv2（学習用）の半荘です。':'牌譜データ.json・牌譜データv3 の半荘です（v3 は Mortal の解析結果が追加されたものから出題されます）。'}実戦で Mortal の推奨率が20%以下の手を選んだ回数が多い順です。「次」の印の半荘から順に出題します。</p>
     ${R.length?'':'<p class="muted center">出題できる半荘がありません。</p>'}
     ${R.map((r,i)=>`<div class="item">
-      <div class="row"><b>${i+1}位</b>${i===pos?'<span class="badge b-chk">次</span>':''}<span class="small muted">牌譜 ${esc(games[r.g].id.slice(0,8))}</span><span class="grow"></span>
+      <div class="row"><b>${i+1}位</b>${i===pos?'<span class="badge b-chk">次</span>':''}<span class="small muted">${games[r.g].tenhou?'天鳳 '+esc(games[r.g].tenhou.slice(0,10)):'牌譜 '+esc(games[r.g].id.slice(0,8))}</span>${games[r.g].sub?'<span class="badge">Mortal未解析・代役判定</span>':''}<span class="grow"></span>
         <span class="badge b-false">推奨率20%以下 ${r.low}回</span></div>
       <div class="small muted">${r.kyokus}局 ／ あなたの判断 ${r.dec}回 ／ 推奨との確率差の合計 ${(r.loss*100).toFixed(0)}pt</div>
       <button class="btn-p" data-rg="${r.g}" style="margin-top:6px;width:100%">この半荘を復習する</button></div>`).join('')}</div>`;
@@ -1061,7 +1061,7 @@ function drawViewer(){
     const list=d.list.map(x=>({action:x.a,prob:x.p}));
     dh+=`<div class="card" style="margin-top:8px"><div class="row">${d.ok?'<span class="okmark">OK</span>':'<span class="false" style="font-size:24px">FALSE</span>'}
       <span class="grow"></span><span class="small muted">判断${d.n+1}${d.hinted?'（ヒント使用）':''}</span></div>
-      <div>あなた：<b>${esc(UI.actionText(d.chosen,0))}</b>　${d.mortal?'Mortal（本物）':''}推奨：<b style="color:var(--accent)">${esc(UI.actionText(list[0].action,0))}</b></div>
+      <div>あなた：<b>${esc(UI.actionText(d.chosen,0))}</b>　${d.mortal?'Mortal（本物）':d.sub?'Mortal代役':''}推奨：<b style="color:var(--accent)">${esc(UI.actionText(list[0].action,0))}</b></div>
       ${d.actual?`<div class="small muted">実戦：${esc(UI.actionText(d.actual,0))}</div>`:''}
       ${whyHTML(d.why)}
       ${UI.candHTML(list,{chosen:d.chosen,me:0,max:8})}</div>`;
