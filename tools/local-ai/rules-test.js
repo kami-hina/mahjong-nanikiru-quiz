@@ -140,5 +140,34 @@ const acts=(g)=>g.request();
   g2.k.phase='end'; g2.endKyoku({type:'ryukyoku',deltas:[0,0,0,0],renchan:false,draw:true}); g2.next();
   ok(g.k.wall.join()===g2.k.wall.join(),'restored game deals same next wall');
 }
+// --- 10. 役の判定（翻数・食い下がり）
+{
+  const W=(hand,win,o)=>Object.assign({hand:h(hand),melds:[],win,tsumo:false,seat:2,round:0,dora:[]},o||{});
+  const Y=w=>{ const r=MJ.score(w); return r? r.yaku.map(y=>y[0]+(y[2]?'(役満)':y[1])).sort().join(',') : null; };
+  const pon=t=>({type:'pon',tiles:h(t)}), chi=t=>({type:'chi',tiles:h(t)});
+  const cases=[
+    ['混一色 門前3翻（＋役牌 中）', W('123m456m888m11z777z','1z'), '役牌 中1,混一色3'],
+    ['混一色 鳴き2翻', W('123456m11z','1z',{melds:[pon('777z'),pon('888m')]}), '役牌 中1,混一色2'],
+    ['清一色 門前6翻', W('12223345567789m','2m',{riichi:true}), null],
+    ['一気通貫 門前2翻', W('123456789m234p55s','5s',{riichi:true}), '一気通貫2,立直1'],
+    ['一気通貫 鳴き1翻', W('123456m234p55s','5s',{melds:[chi('789m')]}), '一気通貫1'],
+    ['三色同順 門前2翻', W('234m234p234s678s55p','5p',{riichi:true}), '三色同順2,断幺九1,立直1'],
+    ['三色同順 鳴き1翻', W('234m234p678s55p','5p',{melds:[chi('234s')]}), '三色同順1,断幺九1'],
+    ['混全帯幺九 門前2翻', W('123m789p123s99s444z','9s',{riichi:true}), '混全帯幺九2,立直1'],
+    ['混全帯幺九 鳴き1翻', W('123m789p99s444z','9s',{melds:[chi('123s')]}), '混全帯幺九1'],
+    ['純全帯幺九 門前3翻', W('123m789m123p789s11s','1s',{riichi:true}), '立直1,純全帯幺九3'],
+    ['対々和', W('222m55p777s','5p',{melds:[pon('999p'),pon('444s')]}), '対々和2'],
+    ['小三元', W('555z666z77z234m678p','8p',{}), null],
+    ['一盃口（門前のみ）', W('112233m456p789s55p','5p',{riichi:true}), '一盃口1,立直1'],
+    ['鳴いた一盃口形は役なし', W('112233m789s55p','5p',{melds:[chi('456p')]}), null]
+  ];
+  for(const [name,w,expect] of cases){
+    const got=Y(w);
+    if(expect===null){ if(name.startsWith('清一色')) ok(got&&got.includes('清一色6'),name+' got '+got);
+      else if(name.startsWith('小三元')) ok(got&&got.includes('小三元2'),name+' got '+got);
+      else ok(got===null,name+' got '+got); }
+    else ok(got===expect,name+' got '+got+' expected '+expect);
+  }
+}
 console.log(`rules-test: ${passes} passed, ${fails} failed`);
 process.exit(fails?1:0);

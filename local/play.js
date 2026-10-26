@@ -8,7 +8,7 @@ const esc=UI.esc;
 const HUMAN=0; let CPU_MS=300;
 const ABORT={abort:true};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const VERSION='2026-10-26i';
+const VERSION='2026-10-26j';
 
 /* ================= 設定 ================= */
 const CFG_KEY='ml.cfg.v1';
@@ -975,13 +975,14 @@ async function rvPrompt(e,F){
   REC.decisions.push({n,i:P.i,kind,list:P.list.slice(0,10).map(c=>({a:c.action,p:+(+c.prob).toFixed(5)})),chosen:choice,ok,actual,actualOk:AI.actKey(actual)===ek,
     hinted:P.hinted,at:Date.now(),kyoku:kyokuLabel(),why,src:{g:RV.cur.K.g,ki:RV.cur.K.ki},mortal:!P.sub,sub:!!P.sub});
   for(const id of P.memoIds){ const ms=await Store.listMemos(); const m=ms.find(x=>x.id===id); if(m){ m.decision={chosen:choice,ok,n}; m.why=why; await Store.saveMemo(m); } }
+  // 判断した時点で保存する（説明画面の途中で中断しても判断が消えないように。再開時はこの判断の次から）
+  rvSetSaved({id:RV.id,seq:RV.seq,kpos:RV.kpos,fi:RV.fi+1,set:RV.set,savedAt:Date.now()});
+  await rvSaveRecord(false);
   if(!ok&&CFG.judge!=='off'){ const r=await showFalse(P,choice); if(r===ABORT){ PEND=null; return ABORT; } }
   // 正解でも、実戦（牌譜）と違う手を選んだときは、この先が実戦の手で進むことを知らせて止める
   else if(AI.actKey(choice)!==AI.actKey(actual)){ const r=await rvShowDiverge(P,choice,ok); if(r===ABORT){ PEND=null; return ABORT; } }
   PEND=null;
   if(!RV||SCREEN!=='game') return ABORT;
-  rvSetSaved({id:RV.id,seq:RV.seq,kpos:RV.kpos,fi:RV.fi+1,set:RV.set,savedAt:Date.now()});
-  await rvSaveRecord(false); // 判断の記録をすぐ保存（中断→再開しても消えないように）
   return true;
 }
 function rvShowDiverge(P,choice,ok){

@@ -513,6 +513,38 @@ const GROUPS=[
   ['call',/^C_/],
   ['kan',/^K_/]
 ];
+/* 役の形の判定（理由の文に役の名前を出す前に必ず確認する）
+   c: 打牌後の手牌の枚数配列、melds: 副露 */
+const SUITN=['萬子','筒子','索子'];
+function sanshokuCount(c,melds,n){ // 並び n+1,n+2,n+3 の三色で、必要な9枚のうち何種類あるか
+  let cnt=0;
+  for(let s=0;s<3;s++){
+    const chi=melds.find(m=>m.type==='chi'&&suitK(kind(m.tiles[0]))===s&&Math.min.apply(null,m.tiles.map(t=>numK(kind(t))))===n+1);
+    if(chi){ cnt+=3; continue; }
+    for(let i=0;i<3;i++) if(c[s*9+n+i]) cnt++; }
+  return cnt;
+}
+function sanshokuShape(c,melds){ let best={cnt:0,n:-1}; for(let n=0;n<7;n++){ const cnt=sanshokuCount(c,melds,n); if(cnt>best.cnt) best={cnt,n}; } return best; }
+function ittsuShape(c,melds){ // 同じ色の 123・456・789。1〜9のうち何種類あるか
+  let best={cnt:0,s:-1};
+  for(let s=0;s<3;s++){ let cnt=0;
+    for(let i=0;i<9;i++){ const inMeld=melds.some(m=>m.type==='chi'&&m.tiles.some(t=>kind(t)===s*9+i)&&[1,4,7].indexOf(Math.min.apply(null,m.tiles.map(t=>numK(kind(t)))))>=0);
+      if(c[s*9+i]||inMeld) cnt++; }
+    if(cnt>best.cnt) best={cnt,s}; }
+  return best;
+}
+function ittsuCountS(c,melds,s){ let cnt=0; for(let i=0;i<9;i++){ const inMeld=melds.some(m=>m.type==='chi'&&m.tiles.some(t=>kind(t)===s*9+i)&&[1,4,7].indexOf(Math.min.apply(null,m.tiles.map(t=>numK(kind(t)))))>=0); if(c[s*9+i]||inMeld) cnt++; } return cnt; }
+function flushShape(c,melds){ // ホンイツ・チンイツ: 副露はすべてその色か字牌、他の色の数牌の枚数
+  let best=null;
+  for(let s=0;s<3;s++){
+    if(!melds.every(m=>m.tiles.every(t=>{ const k=kind(t); return k>=27||suitK(k)===s; }))) continue;
+    let inS=0, off=0, hon=0;
+    for(let k=0;k<34;k++){ if(k>=27) hon+=c[k]; else if(suitK(k)===s) inS+=c[k]; else off+=c[k]; }
+    for(const m of melds) for(const t of m.tiles){ if(kind(t)>=27) hon++; else inS++; }
+    if(!best||off<best.off) best={s,off,inS,hon};
+  }
+  return best;
+}
 const GI=new Map(); F.forEach((n,i)=>{ for(const [g,re] of GROUPS) if(re.test(n)){ GI.set(i,g); break; } });
 const REL=['自分','下家','対面','上家'];
 const tname=t=>MJ.tileName(t);
@@ -554,13 +586,30 @@ function explain(obs,list,other){
         case 'wait': if(rb.wait&&ro.wait){ if(ro.wait.furiten&&!rb.wait.furiten) t=`${O}を切るとフリテンの待ちになるため`; else if(rb.wait.rest>ro.wait.rest) t=`待ち牌の残りが多いため（打${B}：残り${rb.wait.rest}枚 ／ 打${O}：残り${ro.wait.rest}枚）`; } break;
         case 'yaku': if(rb.han&&ro.han){ if(rb.han.yaku&&!ro.han.yaku) t=`役のあるテンパイになるため（${O}を切ると役なしで和了できない待ちが残る）`; else if(rb.han.han>ro.han.han+0.4) t=`和了したときの打点が高いため（推定 約${rb.han.han.toFixed(1)}翻 ／ 約${ro.han.han.toFixed(1)}翻）`; else if((rb.han.frac||0)>(ro.han.frac||0)) t=`どの待ちで和了しても役が付きやすいため`; }
           else if(!P.mz) t=`鳴いた手で役を残すため（${O}を切ると役がなくなる）`; break;
-        case 'flush': t=`ホンイツ（染め手）を目指した方が打点が高いため`; break;
+        case 'flush': {
+          // 推奨が他の色を切り、比べる手がその色（または字牌）を切るときだけ。副露も含めて染め手の形になっていること
+          const cB=D.c.slice(); cB[kind(best.pai)]--; const fl=flushShape(cB,P.meldsArr);
+          const kb=kind(best.pai), ko=kind(other.pai);
+          if(fl&&fl.off<=3&&fl.inS+fl.hon>=9&&kb<27&&suitK(kb)!==fl.s&&(ko>=27||suitK(ko)===fl.s)){
+            const name=fl.hon>0? 'ホンイツ（'+SUITN[fl.s]+'＋字牌）' : 'チンイツ・ホンイツ（'+SUITN[fl.s]+'）';
+            t=`${name}を目指して、他の色の ${B} を先に切るため（打点が大きく上がる）`; }
+          break; }
         case 'dora': t= MJ.isRed(other.pai)? `赤ドラ（${O}）を残して打点を確保するため` : `ドラ（${obs.dora.map(d=>tname(MJ.kname(doraOf(d)))).join('・')}）を活かして打点を確保するため`; break;
-        case 'handyaku': { const fbN=n=>fb[FI[n]]||0, foN=n=>fo[FI[n]]||0;
-          if(foN('d_sanshoku')>fbN('d_sanshoku')) t=`三色同順の可能性を残すため`;
-          else if(foN('d_ittsu')>fbN('d_ittsu')) t=`一気通貫の可能性を残すため`;
-          else if(foN('d_yakuhaipair')>0) t=`役牌（${O}）の対子を残して役を確保するため`;
-          else t=`タンヤオを目指すため（幺九牌から整理する）`; break; }
+        case 'handyaku': {
+          const cB=D.c.slice(); cB[kind(best.pai)]--; const cO=D.c.slice(); cO[kind(other.pai)]--;
+          const kb=kind(best.pai), ko=kind(other.pai), M=P.meldsArr, near=D.smin<=2;
+          const sB=sanshokuShape(cB,M), iB=ittsuShape(cB,M);
+          const yak=[31,32,33,27+P.seat,27+obs.bakaze];
+          let yaoB=0; for(let k=0;k<34;k++) if(isYaochuK(k)) yaoB+=cB[k];
+          const meldYao=M.some(m=>m.tiles.some(t=>isYaochuK(kind(t))));
+          if(near&&sB.cnt>=7&&sanshokuCount(cO,M,sB.n)<sB.cnt){
+            const n=sB.n+1; t=`三色同順（${n}${n+1}${n+2}）の形を残すため（${O}を切ると崩れる）`; }
+          else if(near&&iB.cnt>=7&&ittsuCountS(cO,M,iB.s)<iB.cnt){
+            t=`一気通貫（${SUITN[iB.s]}の123・456・789）の形を残すため（${O}を切ると崩れる）`; }
+          else if(D.c[ko]>=2&&yak.indexOf(ko)>=0) t=`役牌（${O}）の対子を残して役を確保するため`;
+          else if(!meldYao&&yaoB===0&&isYaochuK(kb)&&!isYaochuK(ko)) t=`タンヤオ（中張牌だけの手）にするため、最後の幺九牌の ${B} を切る`;
+          else if(!meldYao&&yaoB===1&&isYaochuK(kb)&&!isYaochuK(ko)) t=`タンヤオに近づけるため、幺九牌の ${B} を先に切る（幺九牌は残り1枚）`;
+          break; }
         case 'defense': {
           const parts=[];
           for(let o=0;o<4;o++){ if(o===obs.me) continue;
@@ -577,7 +626,11 @@ function explain(obs,list,other){
         case 'tiletype': {
           const kb=kind(best.pai), ko=kind(other.pai);
           const yak=[31,32,33,27+P.seat,27+obs.bakaze];
-          if(ko>=27&&yak.indexOf(ko)>=0&&D.c[ko]===1) t=`役牌（${O}）は重なれば役になるので、先に${B}を切るため`;
+          const yb=yak.indexOf(kb)>=0, yo=yak.indexOf(ko)>=0;
+          const seenB=P.vis[kb]-D.c[kb], seenO=P.vis[ko]-D.c[ko];
+          if(kb>=27&&ko>=27&&seenB>seenO) t=`${B}はすでに${seenB}枚見えていて、${O}より重なりにくいため`;
+          else if(ko>=27&&yo&&!yb&&D.c[ko]===1) t=`役牌（${O}）は重なれば役になるので、先に${B}を切るため`;
+          else if(kb>=27&&ko>=27&&yb&&yo) t=`どちらも役牌だが、残しておく価値が${O}の方が少し高いため`;
           else if(kb>=27) t=`孤立した字牌（${B}）から整理するため（数牌の方がほかの牌とつながりやすい）`;
           else if(MJ.isTermK(kb)) t=`使いにくい端牌（${B}）から整理するため`;
           else if(D.c[ko]>=2) t=`対子（${O}）を残して雀頭・ポンの候補にするため`;
