@@ -8,7 +8,7 @@ const esc=UI.esc;
 const HUMAN=0; let CPU_MS=300;
 const ABORT={abort:true};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const VERSION='2026-10-26h';
+const VERSION='2026-10-26i';
 
 /* ================= 設定 ================= */
 const CFG_KEY='ml.cfg.v1';
@@ -626,7 +626,8 @@ function showFalse(P,choice){
     overlay(`<div class="ovb">
       <div class="row"><span class="false">FALSE</span><span class="grow"></span><span class="small muted">${esc(decisionTitle(P))}</span></div>
       <div style="margin-top:6px">あなた：<b style="color:#ff8a8a">${esc(UI.actionText(choice,HUMAN))}</b>　${P.review&&!P.sub?'Mortal（本物）':P.sub?'Mortal代役（この半荘はMortal未解析）':'Mortal代役'}の推奨：<b style="color:var(--accent)">${esc(UI.actionText(best.action,HUMAN))}</b>（${(best.prob*100).toFixed(1)}%）</div>
-      ${P.review&&P.actual?`<div class="small muted">実戦（実際の牌譜）：${esc(UI.actionText(P.actual,HUMAN))}${AI.actKey(P.actual)===AI.actKey(best.action)?'（実戦では正解していました）':''}</div>`:''}
+      ${P.review&&P.actual?`<div class="small muted">実戦（実際の牌譜）：${esc(UI.actionText(P.actual,HUMAN))}${AI.actKey(P.actual)===AI.actKey(best.action)?'（実戦では正解していました）':''}</div>
+      ${AI.actKey(P.actual)!==AI.actKey(choice)?`<div class="small" style="color:var(--gold)">この先は実戦の手（${esc(UI.actionText(P.actual,HUMAN))}）で進みます（本物の Mortal の解析と同じ状況を保つため）</div>`:''}`:''}
       ${whyHTML(P.why)}
       ${handBarsHTML(P,choice)}
       ${UI.candHTML(P.list,{chosen:choice,me:HUMAN,max:10})}
@@ -975,11 +976,23 @@ async function rvPrompt(e,F){
     hinted:P.hinted,at:Date.now(),kyoku:kyokuLabel(),why,src:{g:RV.cur.K.g,ki:RV.cur.K.ki},mortal:!P.sub,sub:!!P.sub});
   for(const id of P.memoIds){ const ms=await Store.listMemos(); const m=ms.find(x=>x.id===id); if(m){ m.decision={chosen:choice,ok,n}; m.why=why; await Store.saveMemo(m); } }
   if(!ok&&CFG.judge!=='off'){ const r=await showFalse(P,choice); if(r===ABORT){ PEND=null; return ABORT; } }
+  // 正解でも、実戦（牌譜）と違う手を選んだときは、この先が実戦の手で進むことを知らせて止める
+  else if(AI.actKey(choice)!==AI.actKey(actual)){ const r=await rvShowDiverge(P,choice,ok); if(r===ABORT){ PEND=null; return ABORT; } }
   PEND=null;
   if(!RV||SCREEN!=='game') return ABORT;
   rvSetSaved({id:RV.id,seq:RV.seq,kpos:RV.kpos,fi:RV.fi+1,set:RV.set,savedAt:Date.now()});
   await rvSaveRecord(false); // 判断の記録をすぐ保存（中断→再開しても消えないように）
   return true;
+}
+function rvShowDiverge(P,choice,ok){
+  return new Promise(res=>{
+    overlay(`<div class="ovb">
+      <div class="row">${ok?'<span class="okmark">正解</span>':'<span class="false" style="font-size:24px">FALSE</span>'}<span class="grow"></span><span class="small muted">${esc(decisionTitle(P))}</span></div>
+      <div style="margin-top:8px;font-size:15px">あなた：<b>${esc(UI.actionText(choice,HUMAN))}</b>${ok?'（'+(P.sub?'Mortal代役':'本物の Mortal')+'の推奨と一致）':''}</div>
+      <div style="margin-top:4px;font-size:15px">実戦（実際の牌譜）：<b style="color:var(--gold)">${esc(UI.actionText(P.actual,HUMAN))}</b></div>
+      <div class="why" style="margin-top:10px"><div class="wt">この先の進み方</div><div class="wi">復習半荘は、本物の Mortal の解析と同じ状況を保つため、この先は<b>実戦の手（${esc(UI.actionText(P.actual,HUMAN))}）</b>で進みます。河や手牌が、あなたの選んだ手と違って見えるのはそのためです。</div></div>
+    </div><div class="ovf"><button class="btn-p" id="ov-go">続ける</button></div>`,d=>{ $('#ov-go',d).onclick=()=>{ closeOverlay(); res(true); }; });
+  });
 }
 function rvResult(){
   return new Promise(res=>{
