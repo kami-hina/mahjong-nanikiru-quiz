@@ -8,7 +8,7 @@ const esc=UI.esc;
 const HUMAN=0; let CPU_MS=300;
 const ABORT={abort:true};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const VERSION='2026-10-26c';
+const VERSION='2026-10-26d';
 
 /* ================= 設定 ================= */
 const CFG_KEY='ml.cfg.v1';
@@ -99,9 +99,10 @@ async function renderHome(){
     <button class="hbtn btn-p" id="h-new">新しい半荘を始める</button>
     <div class="card">
       <h2>復習半荘</h2>
-      <p class="small muted" style="margin:0 0 6px">共有された牌譜（Mortalの解析済みの半荘）から1半荘を選び、東1局から最後の局まで、全局を全く同じ手牌・同じ進行で打ちます。あなたの判断は本物の Mortal の解析結果と照合し、違えば FALSE を表示します（共有された全半荘からランダムに選びます）。</p>
+      <p class="small muted" style="margin:0 0 6px">共有された牌譜（Mortalの解析済みの半荘）から1半荘を選び、東1局から最後の局まで、全局を全く同じ手牌・同じ進行で打ちます。あなたの判断は本物の Mortal の解析結果と照合し、違えば FALSE を表示します。<br>出題順：実戦で推奨率20%以下の手を選んだ回数が多い半荘から順に出題します（一巡したら最初から）。</p>
       ${rvSaved()?`<button class="hbtn btn-gold" id="h-rvc">復習半荘の続きから</button>`:''}
-      <button class="hbtn" id="h-rv">復習半荘を始める</button>
+      <button class="hbtn" id="h-rv">次の復習半荘を始める</button>
+      <button class="hbtn btn-g" id="h-rvl">出題順の一覧から選ぶ</button>
     </div>
     <div class="card">
       <h2>要チェック</h2>
@@ -130,6 +131,7 @@ async function renderHome(){
   $('#h-chk').onclick=renderChecks; $('#h-logs').onclick=renderLogs; $('#h-set').onclick=renderSettings;
   $('#h-rv').onclick=()=>{ if(rvSaved()&&!confirm('途中の復習半荘があります。新しく始めると、途中までの記録は牌譜一覧に保存されます。よろしいですか？')) return; rvStart(); };
   const rc=$('#h-rvc'); if(rc) rc.onclick=rvResume;
+  $('#h-rvl').onclick=renderReviewList;
   $('#h-port').onclick=()=>{ CFG.mode='portrait'; saveCfg(); applyLayout(); renderHome(); };
   $('#h-land').onclick=()=>{ CFG.mode='landscape'; saveCfg(); applyLayout(); renderHome(); };
 }
@@ -686,12 +688,35 @@ function rvRel(K){
 const RVDONE='ml.review.done.v1';
 function rvDone(){ try{ return new Set(JSON.parse(localStorage.getItem(RVDONE)||'[]')); }catch(e){ return new Set(); } }
 function rvMarkDone(g){ const d=rvDone(); d.add(g); try{ localStorage.setItem(RVDONE,JSON.stringify([...d])); }catch(e){} }
-// 半荘の最初の局（全半荘からランダム）
-function rvPickFirst(){
-  const pool=rvPool(), done=rvDone(), first=new Map();
-  pool.forEach((K,i)=>{ if(K.ki===0&&!first.has(K.g)) first.set(K.g,i); });
-  const c=[...first.values()]; // 復習済みかどうかに関係なく、共有された全半荘から選ぶ
-  return c.length? c[Math.floor(Math.random()*c.length)] : -1;
+/* 出題順: 実戦で「Mortal の推奨率が20%以下の手」を選んだ回数が多い半荘から順に（一巡したら最初に戻る）
+   回数が同じなら、推奨手との確率差の合計が大きい半荘を先に */
+const RVNEXT='ml.review.next.v1', LOWP=0.2;
+let RVRANK=null;
+function rvRanking(){
+  if(RVRANK) return RVRANK;
+  const pool=rvPool(), by=new Map();
+  pool.forEach((K,i)=>{
+    let g=by.get(K.g); if(!g){ g={g:K.g,first:-1,low:0,loss:0,dec:0,kyokus:0}; by.set(K.g,g); }
+    if(K.ki===0) g.first=i; g.kyokus++;
+    for(const e of K.en){
+      if(!e.l||e.l.indexOf(' ')<0) continue; // 選択肢が1つの場面は除く
+      g.dec++;
+      if(e.a===e.e) continue;
+      const m=new Map(e.c.split('|').map(x=>{ const [c,p]=x.split(':'); return [c,+p]; }));
+      const pa=m.has(e.a)? m.get(e.a) : 0, pe=m.has(e.e)? m.get(e.e) : 1;
+      if(pa<=LOWP){ g.low++; g.loss+=pe-pa; }
+    }
+  });
+  RVRANK=[...by.values()].filter(x=>x.first>=0).sort((a,b)=>b.low-a.low||b.loss-a.loss||a.g-b.g);
+  return RVRANK;
+}
+function rvNextPos(){ try{ return +(localStorage.getItem(RVNEXT)||0)||0; }catch(e){ return 0; } }
+function rvPickFirst(gi){
+  const R=rvRanking(); if(!R.length) return -1;
+  if(gi!=null){ const x=R.find(r=>r.g===gi); return x? x.first : -1; }
+  const pos=rvNextPos()%R.length;
+  try{ localStorage.setItem(RVNEXT,String((pos+1)%R.length)); }catch(e){}
+  return R[pos].first;
 }
 // 前の局の「実際の続き」の状況（場・局・本場・点数・順位・自風）に近い局を選ぶ
 function rvPickNext(prev){
@@ -788,11 +813,11 @@ async function rvSaveRecord(finished){
   REC.seq=RV.seq.slice(); REC.kpos=RV.kpos;
   await Store.saveGame(Object.assign({},REC,{log:RV.log.slice()}));
 }
-async function rvStart(){
+async function rvStart(gi){
   toast('牌譜データを読み込んでいます…',1500);
   if(!await loadReviewData()){ toast('復習半荘のデータを読み込めませんでした'); return; }
   const old=rvSaved(); if(old){ rvSetSaved(null); }
-  const first=rvPickFirst();
+  const first=rvPickFirst(gi);
   if(first<0){ toast('復習半荘に使える牌譜がありません'); return; }
   const names=['あなた','下家','対面','上家'];
   RV={id:'rv-'+newId(),seq:[first],kpos:0,fi:0,log:[],names};
@@ -933,6 +958,22 @@ function rvMenu(){
     $('#m-home',d).onclick=async()=>{ closeOverlay(); rvSave(); await rvSaveRecord(false); RV=null; G=null; renderHome(); };
     $('#m-end',d).onclick=async()=>{ if(!confirm('この復習半荘をやめますか？')) return; closeOverlay(); await rvSaveRecord(false); rvSetSaved(null); RV=null; G=null; PEND=null; renderHome(); };
   });
+}
+
+async function renderReviewList(){
+  show('logs');
+  $('#logs').innerHTML='<div class="page"><p class="muted center">読み込み中…</p></div>';
+  if(!await loadReviewData()){ toast('復習半荘のデータを読み込めませんでした'); return renderHome(); }
+  const R=rvRanking(), pos=rvNextPos()%R.length, games=window.ML_REVIEW.games;
+  $('#logs').innerHTML=`<div class="page"><div class="topbar"><button id="rl-back">← ホーム</button><h1>復習半荘の出題順（${R.length}半荘）</h1></div>
+    <p class="small muted">実戦で Mortal の推奨率が20%以下の手を選んだ回数が多い順です。「次」の印の半荘から順に出題します。</p>
+    ${R.map((r,i)=>`<div class="item">
+      <div class="row"><b>${i+1}位</b>${i===pos?'<span class="badge b-chk">次</span>':''}<span class="small muted">牌譜 ${esc(games[r.g].id.slice(0,8))}</span><span class="grow"></span>
+        <span class="badge b-false">推奨率20%以下 ${r.low}回</span></div>
+      <div class="small muted">${r.kyokus}局 ／ あなたの判断 ${r.dec}回 ／ 推奨との確率差の合計 ${(r.loss*100).toFixed(0)}pt</div>
+      <button class="btn-p" data-rg="${r.g}" style="margin-top:6px;width:100%">この半荘を復習する</button></div>`).join('')}</div>`;
+  $('#rl-back').onclick=renderHome;
+  $$('[data-rg]').forEach(b=>b.onclick=()=>{ if(rvSaved()&&!confirm('途中の復習半荘があります。新しく始めると、途中までの記録は牌譜一覧に保存されます。よろしいですか？')) return; rvStart(+b.dataset.rg); });
 }
 
 /* ================= 牌譜一覧 ================= */
