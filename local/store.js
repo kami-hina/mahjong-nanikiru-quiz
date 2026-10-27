@@ -2,7 +2,7 @@
    DB: mahjong-local
      games : {id, createdAt, updatedAt, finished, names, seed, log, decisions, memos(id[]), result, summary}
      memos : {id, gameId, createdAt, text, checked, kyokuLabel, logIndex, st, q}
-     kv    : {k, v}   … 対局中のゲーム状態（中断→再開用）など
+     kv    : {k, v}   … 対局中のゲーム状態（中断→再開用）、何切るクイズから復習半荘に追加した半荘（review.extra.<レポートID>）など
    IndexedDB が使えない環境でも遊べるよう、localStorage に要約と対局中データの控えを置く。 */
 (function(root){
 "use strict";
@@ -31,7 +31,7 @@ function tx(store,mode,fn){
 }
 const lsGet=(k,d)=>{ try{ const v=localStorage.getItem(k); return v==null?d:JSON.parse(v); }catch(e){ return d; } };
 const lsSet=(k,v)=>{ try{ localStorage.setItem(k,JSON.stringify(v)); return true; }catch(e){ return false; } };
-const LS_INDEX='ml.games.v1', LS_CUR='ml.current.v1', LS_MEMO='ml.memos.v1';
+const LS_INDEX='ml.games.v1', LS_CUR='ml.current.v1', LS_MEMO='ml.memos.v1', LS_RVX='ml.review.extra.v1';
 // 一覧用の要約
 function summaryOf(g){
   const dec=g.decisions||[];
@@ -97,6 +97,22 @@ const Store={
     try{ localStorage.removeItem(LS_CUR); }catch(e){}
     try{ await tx('kv','readwrite',s=>s.delete('current')); }catch(e){}
   },
+  // 何切るクイズの一覧から復習半荘モードに追加した半荘 {id(レポートID), pid, tenhou, addedAt, kyokus}
+  async saveReviewExtra(x){
+    let ok=false;
+    try{ await tx('kv','readwrite',s=>s.put({k:'review.extra.'+x.id,v:x})); ok=true; }catch(e){ Store.lastError=e; }
+    if(!ok) lsSet('ml.review.extra.'+x.id,x);
+    const idx=lsGet(LS_RVX,[]).filter(id=>id!==x.id); idx.push(x.id); lsSet(LS_RVX,idx);
+    return x;
+  },
+  async listReviewExtras(){
+    let a=[];
+    try{ a=((await tx('kv','readonly',s=>s.getAll()))||[]).filter(r=>/^review\.extra\./.test(r.k)).map(r=>r.v); }catch(e){}
+    const m=new Map(a.map(x=>[x.id,x]));
+    for(const id of lsGet(LS_RVX,[])) if(!m.has(id)){ const x=lsGet('ml.review.extra.'+id,null); if(x) m.set(id,x); }
+    return [...m.values()].sort((x,y)=>(x.addedAt||0)-(y.addedAt||0));
+  },
+  reviewExtraIds(){ return new Set(lsGet(LS_RVX,[])); },
   async askPersist(){ try{ if(navigator.storage&&navigator.storage.persist) await navigator.storage.persist(); }catch(e){} }
 };
 root.MLStore=Store;

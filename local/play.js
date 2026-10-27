@@ -735,10 +735,30 @@ async function endGame(){
 const RVKEY='ml.review.v1';
 let RVGEN=0; // 復習半荘の世代（新しく始めたら古い進行処理は止まる）
 // 復習半荘のデータ（約6MB）は使うときだけ読み込む（オフラインでも Service Worker の保存分から読める）
-function loadReviewData(){
-  if(window.ML_REVIEW) return Promise.resolve(true);
-  return new Promise(res=>{ const sc=document.createElement('script'); sc.src='local/review-data.js';
-    sc.onload=()=>res(!!window.ML_REVIEW); sc.onerror=()=>res(false); document.body.appendChild(sc); });
+async function loadReviewData(){
+  if(!window.ML_REVIEW&&!await new Promise(res=>{ const sc=document.createElement('script'); sc.src='local/review-data.js';
+    sc.onload=()=>res(!!window.ML_REVIEW); sc.onerror=()=>res(false); document.body.appendChild(sc); })) return false;
+  await rvMergeExtras();
+  return true;
+}
+/* 何切るクイズの一覧から「復習半荘モードに追加」した半荘を、復習半荘（main）の末尾に足す。
+   追加した順に後ろへ足すので、途中の復習半荘の局の番号は変わらない。すでに牌譜データにある半荘は復習半荘（main）に移すだけ */
+const RVEXTRA=new Set();
+async function rvMergeExtras(){
+  const R=window.ML_REVIEW; let xs=[];
+  try{ xs=await Store.listReviewExtras(); }catch(e){}
+  const byId=new Map(R.games.map((g,i)=>[g.id,i]));
+  let n=0;
+  for(const x of xs){
+    if(RVEXTRA.has(x.id)) continue;
+    RVEXTRA.add(x.id); n++;
+    const have=byId.get(x.id);
+    if(have!=null){ const g=R.games[have]; if(g.src!=='main'){ g.src='main'; g.added=1; } if(x.tenhou&&!g.tenhou) g.tenhou=x.tenhou; continue; }
+    const gi=R.games.length, base=R.kyokus.length;
+    R.games.push({id:x.id,pid:x.pid,src:'main',tenhou:x.tenhou||undefined,added:1});
+    x.kyokus.forEach(K=>R.kyokus.push(Object.assign({},K,{g:gi,nx:K.nx<0?-1:K.nx+base})));
+  }
+  if(n) for(const k in RVRANK) delete RVRANK[k];
 }
 let RV=null;
 const rvPool=()=>(window.ML_REVIEW&&window.ML_REVIEW.kyokus)||[];
@@ -1053,10 +1073,10 @@ async function renderReviewList(set){
   if(!await loadReviewData()){ toast('復習半荘のデータを読み込めませんでした'); return renderHome(); }
   const R=rvRanking(set), pos=R.length? rvNextPos(set)%R.length : 0, games=window.ML_REVIEW.games;
   $('#logs').innerHTML=`<div class="page"><div class="topbar"><button id="rl-back">← ホーム</button><h1>${esc(rvSetName(set))}の出題順（${R.length}半荘）</h1></div>
-    <p class="small muted">${set==='v2'?'牌譜データv2（学習用）の半荘です。':'牌譜データ.json・牌譜データv3 の半荘です（v3 は Mortal の解析結果が追加されたものから出題されます）。'}実戦で Mortal の推奨率が20%以下の手を選んだ回数が多い順です。「次」の印の半荘から順に出題します。</p>
+    <p class="small muted">${set==='v2'?'牌譜データv2（学習用）の半荘です。':'牌譜データ.json・牌譜データv3 の半荘と、何切るクイズの一覧から追加した半荘です（v3 は Mortal の解析結果が追加されたものから出題されます）。'}実戦で Mortal の推奨率が20%以下の手を選んだ回数が多い順です。「次」の印の半荘から順に出題します。</p>
     ${R.length?'':'<p class="muted center">出題できる半荘がありません。</p>'}
     ${R.map((r,i)=>`<div class="item">
-      <div class="row"><b>${i+1}位</b>${i===pos?'<span class="badge b-chk">次</span>':''}<span class="small muted">${games[r.g].tenhou?'天鳳 '+esc(games[r.g].tenhou.slice(0,10)):'牌譜 '+esc(games[r.g].id.slice(0,8))}</span>${games[r.g].sub?'<span class="badge">Mortal未解析・代役判定</span>':''}<span class="grow"></span>
+      <div class="row"><b>${i+1}位</b>${i===pos?'<span class="badge b-chk">次</span>':''}<span class="small muted">${games[r.g].tenhou?'天鳳 '+esc(games[r.g].tenhou.slice(0,10)):'牌譜 '+esc(games[r.g].id.slice(0,8))}</span>${games[r.g].sub?'<span class="badge">Mortal未解析・代役判定</span>':''}${games[r.g].added?'<span class="badge">何切るクイズから追加</span>':''}<span class="grow"></span>
         <span class="badge b-false">推奨率20%以下 ${r.low}回</span></div>
       <div class="small muted">${r.kyokus}局 ／ あなたの判断 ${r.dec}回 ／ 推奨との確率差の合計 ${(r.loss*100).toFixed(0)}pt</div>
       <button class="btn-p" data-rg="${r.g}" style="margin-top:6px;width:100%">この半荘を復習する</button></div>`).join('')}</div>`;
