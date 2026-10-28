@@ -86,13 +86,18 @@ function replayReport(rep,fileId){
   }
   return out;
 }
+// 同じ半荘を同じ席で解析したレポート（別のレポートIDで同じ内容）を見分ける印。東1局の配牌＋レビュー対象の席
+const gameSig=rep=>{ const s=(rep.mjai_log||[]).find(e=>e.type==='start_kyoku'); return s? JSON.stringify(s.tehais)+'@'+(rep.player_id|0) : null; };
 function loadDataset(dir,opts){
   opts=opts||{};
   const files=fs.readdirSync(dir).filter(f=>f.endsWith('.json')).sort();
-  const all=[]; let miss=0, tot=0;
+  const all=[]; let miss=0, tot=0, dup=0;
+  const seen=new Set();
   for(const f of files){
     const rep=JSON.parse(fs.readFileSync(path.join(dir,f),'utf8'));
     if(!rep.review||!rep.mjai_log) continue;
+    // 同じ半荘が重なると学習で2倍に効き、学習用とテスト用に分かれるとテストの一致率が高く出るので、1つだけ使う
+    const sg=gameSig(rep); if(seen.has(sg)){ dup++; continue; } seen.add(sg);
     const pts=replayReport(rep,f.replace('.json',''));
     let n=0; for(const k of rep.review.kyokus) n+=k.entries.length;
     tot+=n; miss+=n-pts.length;
@@ -107,7 +112,7 @@ function loadDataset(dir,opts){
         isEqual:e.is_equal,shanten:e.shanten,riichiAfter:!!e.at_self_riichi});
     }
   }
-  if(!opts.quiet) console.error(`files=${files.length} entries=${tot} matched=${all.length} unmatched=${miss}`);
+  if(!opts.quiet) console.error(`files=${files.length} duplicates=${dup} entries=${tot} matched=${all.length} unmatched=${miss}`);
   return all;
 }
-module.exports={loadDataset,replayReport,cv,cvAction};
+module.exports={loadDataset,replayReport,cv,cvAction,gameSig};

@@ -19,12 +19,17 @@ for(const f of fs.readdirSync(root).filter(f=>/^牌譜データ.*\.(json|txt)$/.
   const ids=idsIn(f); const isV2=/^牌譜データv2/.test(f);
   ids.forEach(id=>(isV2?V2:MAIN).add(id)); }
 const files=fs.readdirSync(dir).filter(f=>f.endsWith('.json')).sort();
-let nEnt=0, nMiss=0;
+let nEnt=0, nMiss=0, nDup=0;
+const {gameSig}=require('./dataset.js');
+const seen=new Map(); // 同じ半荘・同じ席のレポートは1つだけ（どれかが復習半荘用なら復習半荘に）
 for(const f of files){
   const rep=JSON.parse(fs.readFileSync(path.join(dir,f),'utf8'));
   if(!rep.review||!rep.mjai_log||rep.game_length!=='Hanchan') continue;
   const rid=f.replace('.json','');
   const src=MAIN.has(rid)? 'main' : V2.has(rid)? 'v2' : 'other';
+  const sg=gameSig(rep);
+  if(seen.has(sg)){ const g=out.games[seen.get(sg)]; if(src==='main'||(src==='v2'&&g.src==='other')) g.src=src; nDup++; continue; }
+  seen.set(sg,out.games.length);
   const gi=out.games.length; out.games.push({id:rid,pid:rep.player_id|0,src});
   const r=RB.fromReport(rep,gi,out.kyokus.length);
   out.kyokus.push(...r.kyokus); nEnt+=r.entries; nMiss+=r.total-r.entries;
@@ -147,4 +152,4 @@ const js='/* 復習半荘モード用データ（tools/local-ai/build-review.js 
 fs.writeFileSync(path.join(__dirname,'../../local/review-data.js'),js);
 const cnt={}; out.games.forEach(g=>cnt[g.src]=(cnt[g.src]||0)+1);
 console.log('sources',JSON.stringify(cnt));
-console.log('games',out.games.length,'kyokus',out.kyokus.length,'entries',nEnt,'unmatched',nMiss,'size',(js.length/1024/1024).toFixed(2)+'MB');
+console.log('games',out.games.length,'duplicates',nDup,'kyokus',out.kyokus.length,'entries',nEnt,'unmatched',nMiss,'size',(js.length/1024/1024).toFixed(2)+'MB');
