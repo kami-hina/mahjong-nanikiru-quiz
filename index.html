@@ -110,7 +110,7 @@ img.shot{width:100%;border-radius:10px;border:1px solid var(--line)}
 <script src="local/review-build.js"></script>
 <script>
 "use strict";
-const APP_VERSION='2026-10-28a';
+const APP_VERSION='2026-10-30a';
 /* ========================= 小物 ========================= */
 const $=(s,r)=>(r||document).querySelector(s), $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1228,6 +1228,7 @@ async function restoreFrom(list){
       const rep=await fetchReport(reportUrlFrom(x.url),m=>{box.innerHTML=`<span class="spin"></span> ${esc(m)}（${i+1}/${list.length}）`;});
       const probs=extractProblems(rep,x.url,x.reportId);
       const r2=await saveProblems(probs);
+      await autoReview(rep,x.reportId,x.tenhou);
       added+=r2.added; updated+=r2.updated; dup+=r2.dup;
     }catch(e){ err++; }
   }
@@ -1275,8 +1276,9 @@ async function bulkImport(urls,force,pairs){
       const r2=await saveProblems(probs);
       addSource({url:raw,reportId:id,at:Date.now(),count:probs.length,tenhou:pairs[raw]});
       if(pairs[raw]) removePending(pairs[raw]);
+      const rvMsg=await autoReview(rp,id,pairs[raw]);
       res.ok++; res.added+=r2.added; res.updated+=r2.updated; res.skip+=r2.dup;
-      res.notes.push(['◯',raw,probs.length+'問'+(r2.dup?`（うち重複 ${r2.dup}問はスキップ）`:'')]);
+      res.notes.push(['◯',raw,probs.length+'問'+(r2.dup?`（うち重複 ${r2.dup}問はスキップ）`:'')+'・'+rvMsg]);
     }catch(e){ res.fail++; res.notes.push(['×',raw,e.message]); }
   }
   await flush(); askPersist();
@@ -1346,12 +1348,13 @@ async function ingest(rep,srcUrl,reportId,box,force,extra){
   await flush();
   askPersist();
   if(srcUrl) addSource(Object.assign({url:srcUrl, reportId, at:Date.now(), count:probs.length},extra));
+  const rvMsg=await autoReview(rep,reportId,extra&&extra.tenhou);
   const rv=rep.review;
   box.innerHTML=`<div class="queue-item">
     <b>取り込み完了</b><br>
     <span class="small muted">検討局面 ${rv.total_reviewed} / 一致 ${rv.total_matches} / ミス ${rv.total_reviewed-rv.total_matches}</span><br>
     <span class="small">何切る問題として抽出：${total}件${thr>0?`（うち条件該当 ${probs.length}件）`:''}<br>
-    新規保存：<b>${added}件</b>${updated?`／更新：${updated}件（学習状況は維持）`:''}${dup?`／全く同じ局面のためスキップ：${dup}件`:''}</span>
+    新規保存：<b>${added}件</b>${updated?`／更新：${updated}件（学習状況は維持）`:''}${dup?`／全く同じ局面のためスキップ：${dup}件`:''}<br>${esc(rvMsg)}</span>
     <button class="btn-primary btn-block btn-sm" id="tostart" style="margin-top:8px">クイズを開始する</button>
   </div>`;
   const b=$('#tostart'); if(b) b.addEventListener('click',()=>{QUIZ=null;TAB='quiz';$$('nav button').forEach(x=>x.classList.toggle('on',x.dataset.tab==='quiz'));render();});
@@ -1537,7 +1540,7 @@ async function renderList(){
   all.forEach(r=>{ const k=srcKey(r); if(!gAll.has(k)) gAll.set(k,[]); gAll.get(k).push(r); });
   items.forEach(r=>{ const k=srcKey(r); if(!gShow.has(k)) gShow.set(k,[]); gShow.get(k).push(r); });
   const mode = FILTER==='all'?'auto':FILTER;
-  // 天鳳などの牌譜URLから取り込んだ牌譜は、ローカル麻雀の復習半荘モードに追加できる
+  // 取り込んだ牌譜は、ローカル麻雀の復習半荘モードに自動で追加される（それより前に取り込んだものはボタンで追加）
   const srcById=new Map(getSources().filter(x=>x.reportId).map(x=>[x.reportId,x]));
   const rvAdded=MLStore.reviewExtraIds();
   const body=[...gShow.keys()].map(k=>{
@@ -1560,8 +1563,8 @@ async function renderList(){
         </div>
         <button class="btn-ghost btn-sm btn-block" data-q="${esc(k)}" style="margin-top:8px">
           この牌譜の「${esc(MODES[mode].label)}」を順番に出題（${list.length}問）</button>
-        ${head.reportId&&srcById.has(head.reportId)&&srcById.get(head.reportId).tenhou?(rvAdded.has(head.reportId)
-          ?`<button class="btn-ghost btn-sm btn-block" style="margin-top:6px" disabled>復習半荘モードに追加済み</button>`
+        ${head.reportId&&srcById.has(head.reportId)?(rvAdded.has(head.reportId)
+          ?`<div class="small muted" style="margin-top:6px">✓ 復習半荘モードに追加済み</div>`
           :`<button class="btn-ghost btn-sm btn-block" data-rv="${esc(head.reportId)}" style="margin-top:6px">復習半荘モードに追加</button>`):''}
       </div>
       ${list.map(r=>`<div class="list-item" data-open="${esc(r.id)}">
@@ -1593,18 +1596,30 @@ async function renderList(){
 }
 /* 取り込んだ牌譜（Mortal のレポート）を、ローカル麻雀（play.html）の復習半荘モードに追加する。
    レポートを取り直して復習半荘のデータ形式に変換し、端末内（play.html と共有の mahjong-local DB）に保存する */
+// 取り込んだレポートを復習半荘のデータに変換して保存する（取り込み時に自動で呼ぶ。すでに追加済みなら何もしない）
+async function saveReviewFrom(rep,reportId,tenhouUrl){
+  if(MLStore.reviewExtraIds().has(reportId)) return {already:true};
+  if(!rep.mjai_log) throw new Error('レポートに牌譜（mjai_log）が含まれていません');
+  if(rep.game_length!=='Hanchan') throw new Error('復習半荘モードに追加できるのは半荘戦だけです（東風戦は追加できません）');
+  const r=MLReviewBuild.fromReport(rep,0,0);
+  if(!r.kyokus.length) throw new Error('局を読み取れませんでした');
+  const t=tenhouUrl||'', tid=(t.match(/log=([\w-]+)/)||t.match(/paipu=([\w-]+)/)||[])[1]||'';
+  await MLStore.saveReviewExtra({id:reportId,pid:rep.player_id|0,tenhou:tid,addedAt:Date.now(),kyokus:r.kyokus});
+  return r;
+}
+// 取り込みの流れの中で使う版（失敗しても取り込み自体は止めない。結果を一言で返す）
+async function autoReview(rep,reportId,tenhouUrl){
+  try{ const r=await saveReviewFrom(rep,reportId,tenhouUrl); return r.already? '復習半荘モードに追加済み' : `復習半荘モードに追加（${r.kyokus.length}局）`; }
+  catch(e){ DIAG.lastError='復習半荘: '+(e.message||e); return '復習半荘モードには追加できません：'+(e.message||e); }
+}
+// 自動で追加される前に取り込んだ牌譜用（一覧のボタン）。レポートを取り直して追加する
 async function addToReview(reportId,btn){
   const src=getSources().find(x=>x.reportId===reportId); if(!src) return;
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> 追加中…';
   try{
     const rep=await fetchReport(reportUrlFrom(src.url),m=>{ btn.innerHTML=`<span class="spin"></span> ${esc(m)}`; });
-    if(!rep.mjai_log) throw new Error('レポートに牌譜（mjai_log）が含まれていません');
-    if(rep.game_length!=='Hanchan') throw new Error('復習半荘モードに追加できるのは半荘戦だけです（東風戦は追加できません）');
-    const r=MLReviewBuild.fromReport(rep,0,0);
-    if(!r.kyokus.length) throw new Error('局を読み取れませんでした');
-    const t=src.tenhou||'', tid=(t.match(/log=([\w-]+)/)||t.match(/paipu=([\w-]+)/)||[])[1]||'';
-    await MLStore.saveReviewExtra({id:reportId,pid:rep.player_id|0,tenhou:tid,addedAt:Date.now(),kyokus:r.kyokus});
-    toast(`復習半荘モードに追加しました（${r.kyokus.length}局・判断${r.entries}回）。ローカル麻雀の「復習半荘」から打てます`,4500);
+    const r=await saveReviewFrom(rep,reportId,src.tenhou);
+    toast(r.already?'すでに復習半荘モードに追加済みです':`復習半荘モードに追加しました（${r.kyokus.length}局・判断${r.entries}回）。ローカル麻雀の「復習半荘」から打てます`,4500);
     renderList();
   }catch(e){
     btn.disabled=false; btn.textContent='復習半荘モードに追加';
