@@ -108,6 +108,7 @@ img.shot{width:100%;border-radius:10px;border:1px solid var(--line)}
 <script src="qa.js"></script>
 <script src="local/store.js"></script>
 <script src="local/review-build.js"></script>
+<script src="local/review-ids.js"></script>
 <script>
 "use strict";
 const APP_VERSION='2026-10-30a';
@@ -1543,6 +1544,7 @@ async function renderList(){
   // 取り込んだ牌譜は、ローカル麻雀の復習半荘モードに自動で追加される（それより前に取り込んだものはボタンで追加）
   const srcById=new Map(getSources().filter(x=>x.reportId).map(x=>[x.reportId,x]));
   const rvAdded=MLStore.reviewExtraIds();
+  const rvTodo=[...new Set(all.map(r=>r.reportId).filter(id=>id&&srcById.has(id)&&!rvAdded.has(id)))];
   const body=[...gShow.keys()].map(k=>{
     const list=gShow.get(k), whole=gAll.get(k)||[], head=list[0];
     const c={wrong:0,review:0,new:0,correct:0};
@@ -1585,6 +1587,7 @@ async function renderList(){
     <button data-f="review" class="${FILTER==='review'?'on':''}">要復習 ${s.review}</button>
     <button data-f="new" class="${FILTER==='new'?'on':''}">未出題 ${s.new}</button>
     <button data-f="correct" class="${FILTER==='correct'?'on':''}">正解 ${s.correct}</button></div>
+    ${rvTodo.length?`<button class="btn-ghost btn-sm btn-block" id="rvall" style="margin-bottom:12px">これまで取り込んだ牌譜をまとめて復習半荘モードに追加（${rvTodo.length}件）</button>`:''}
     ${body||'<p class="muted center">該当なし</p>'}`;
   $$('.filters button').forEach(b=>b.addEventListener('click',()=>{FILTER=b.dataset.f;renderList();}));
   $$('[data-open]').forEach(b=>b.addEventListener('click',()=>openDetail(b.dataset.open)));
@@ -1593,6 +1596,7 @@ async function renderList(){
     startQuiz(mode,b.dataset.q);
   }));
   $$('[data-rv]').forEach(b=>b.addEventListener('click',()=>addToReview(b.dataset.rv,b)));
+  const ab=$('#rvall'); if(ab) ab.addEventListener('click',()=>addAllToReview(ab));
 }
 /* 取り込んだ牌譜（Mortal のレポート）を、ローカル麻雀（play.html）の復習半荘モードに追加する。
    レポートを取り直して復習半荘のデータ形式に変換し、端末内（play.html と共有の mahjong-local DB）に保存する */
@@ -1612,19 +1616,41 @@ async function autoReview(rep,reportId,tenhouUrl){
   try{ const r=await saveReviewFrom(rep,reportId,tenhouUrl); return r.already? '復習半荘モードに追加済み' : `復習半荘モードに追加（${r.kyokus.length}局）`; }
   catch(e){ DIAG.lastError='復習半荘: '+(e.message||e); return '復習半荘モードには追加できません：'+(e.message||e); }
 }
-// 自動で追加される前に取り込んだ牌譜用（一覧のボタン）。レポートを取り直して追加する
+// 復習半荘のデータ（review-data.js）にすでにある牌譜は、レポートを取り直さずに印だけで追加できる
+const inReviewData=id=>!!(window.ML_REVIEW_IDS&&window.ML_REVIEW_IDS.indexOf(id)>=0);
+async function addSourceToReview(src,onStep){
+  if(MLStore.reviewExtraIds().has(src.reportId)) return {already:true};
+  if(inReviewData(src.reportId)){
+    const t=src.tenhou||'', tid=(t.match(/log=([\w-]+)/)||t.match(/paipu=([\w-]+)/)||[])[1]||'';
+    await MLStore.saveReviewExtra({id:src.reportId,tenhou:tid,addedAt:Date.now(),kyokus:null});
+    return {kyokus:null};
+  }
+  const rep=await fetchReport(reportUrlFrom(src.url),onStep);
+  return saveReviewFrom(rep,src.reportId,src.tenhou);
+}
+// 自動で追加される前に取り込んだ牌譜用（一覧のボタン）
 async function addToReview(reportId,btn){
   const src=getSources().find(x=>x.reportId===reportId); if(!src) return;
   btn.disabled=true; btn.innerHTML='<span class="spin"></span> 追加中…';
   try{
-    const rep=await fetchReport(reportUrlFrom(src.url),m=>{ btn.innerHTML=`<span class="spin"></span> ${esc(m)}`; });
-    const r=await saveReviewFrom(rep,reportId,src.tenhou);
-    toast(r.already?'すでに復習半荘モードに追加済みです':`復習半荘モードに追加しました（${r.kyokus.length}局・判断${r.entries}回）。ローカル麻雀の「復習半荘」から打てます`,4500);
+    const r=await addSourceToReview(src,m=>{ btn.innerHTML=`<span class="spin"></span> ${esc(m)}`; });
+    toast(r.already?'すでに復習半荘モードに追加済みです':`復習半荘モードに追加しました${r.kyokus?`（${r.kyokus.length}局・判断${r.entries}回）`:''}。ローカル麻雀の「復習半荘」から打てます`,4500);
     renderList();
   }catch(e){
     btn.disabled=false; btn.textContent='復習半荘モードに追加';
     toast('追加できませんでした：'+(e.message||e),5000);
   }
+}
+async function addAllToReview(btn){
+  const added=MLStore.reviewExtraIds();
+  const list=getSources().filter(x=>x.reportId&&!added.has(x.reportId));
+  btn.disabled=true; let ok=0; const ng=[];
+  for(let i=0;i<list.length;i++){
+    btn.innerHTML=`<span class="spin"></span> 復習半荘モードに追加中… ${i+1}/${list.length}`;
+    try{ await addSourceToReview(list[i]); ok++; }catch(e){ ng.push(e.message||String(e)); }
+  }
+  toast(`${ok}件を復習半荘モードに追加しました${ng.length?`（${ng.length}件は追加できませんでした：${ng[0]}）`:''}`,ng.length?7000:4000);
+  renderList();
 }
 async function openDetail(id){
   const r=await dbGet(id); if(!r) return;

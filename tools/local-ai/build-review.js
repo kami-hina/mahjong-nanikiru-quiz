@@ -150,6 +150,9 @@ for(const k of out.kyokus){ k.ev=Array.isArray(k.ev)? k.ev.join(' ') : k.ev; del
 const js='/* 復習半荘モード用データ（tools/local-ai/build-review.js が自動生成。手で編集しない）\n   共有された牌譜（Mortal のレビュー '+out.games.length+'半荘）の各局の進行と、あなたの判断ごとの本物の Mortal の評価 */\n'
   +'(function(root){ root.ML_REVIEW='+JSON.stringify(out)+'; })(typeof window!=="undefined"?window:globalThis);\n';
 fs.writeFileSync(path.join(__dirname,'../../local/review-data.js'),js);
+// 何切るクイズ用: 復習半荘のデータに入っている牌譜（レポートID）の一覧。これに入っている牌譜は、レポートを取り直さずに復習半荘モードへ追加できる
+fs.writeFileSync(path.join(__dirname,'../../local/review-ids.js'),'/* 復習半荘のデータ（review-data.js）に入っている牌譜のレポートID（build-review.js が自動生成） */\n'
+  +'(function(root){ root.ML_REVIEW_IDS='+JSON.stringify(out.games.filter(g=>!g.sub).map(g=>g.id))+'; })(typeof window!=="undefined"?window:globalThis);\n');
 const cnt={}; out.games.forEach(g=>cnt[g.src]=(cnt[g.src]||0)+1);
 console.log('sources',JSON.stringify(cnt));
 console.log('games',out.games.length,'duplicates',nDup,'kyokus',out.kyokus.length,'entries',nEnt,'unmatched',nMiss,'size',(js.length/1024/1024).toFixed(2)+'MB');

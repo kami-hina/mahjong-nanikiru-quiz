@@ -98,6 +98,7 @@ const Store={
     try{ await tx('kv','readwrite',s=>s.delete('current')); }catch(e){}
   },
   // 何切るクイズの一覧から復習半荘モードに追加した半荘 {id(レポートID), pid, tenhou, addedAt, kyokus}
+  // （kyokus が null のものは、復習半荘のデータ review-data.js にすでにある半荘を復習半荘に入れる印）
   async saveReviewExtra(x){
     let ok=false;
     try{ await tx('kv','readwrite',s=>s.put({k:'review.extra.'+x.id,v:x})); ok=true; }catch(e){ Store.lastError=e; }
