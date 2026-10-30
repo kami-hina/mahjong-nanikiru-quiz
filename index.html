@@ -106,12 +106,13 @@ img.shot{width:100%;border-radius:10px;border:1px solid var(--line)}
   <button data-tab="settings"><span class="ico">⚙️</span>設定</button>
 </nav>
 <script src="qa.js"></script>
+<script src="local/app-update.js"></script>
 <script src="local/store.js"></script>
 <script src="local/review-build.js"></script>
 <script src="local/review-ids.js"></script>
 <script>
 "use strict";
-const APP_VERSION='2026-10-30a';
+const APP_VERSION='2026-10-30b'; // version.json・local/play.js の VERSION・sw.js の CACHE と同じ版にする
 /* ========================= 小物 ========================= */
 const $=(s,r)=>(r||document).querySelector(s), $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1817,9 +1818,7 @@ async function renderSettings(){
   </div>
   <p class="small muted center" style="margin-top:10px">麻雀 何切るクイズ / データは端末内のみ</p>`;
   $('#model').value=CFG.model;
-  $('#reloadapp').addEventListener('click',async()=>{ await flush();
-    try{ const r=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration(); if(r) await r.update(); }catch(e){}
-    location.replace(location.pathname+'?v='+Date.now()); });
+  $('#reloadapp').addEventListener('click',async()=>{ await flush(); MLUpdate.hardReload(); });
   $('#persist').addEventListener('click',async()=>{ await askPersist();
     toast(DIAG.persisted===true?'永続ストレージが許可されました':'この環境では許可されませんでした（ホーム画面に追加すると通りやすくなります）',4000);
     renderSettings(); });
@@ -1866,6 +1865,8 @@ async function boot(){
 boot();
 // オフライン対応（ローカル麻雀と共通の Service Worker）
 if('serviceWorker' in navigator&&location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(()=>{});
+// 新しい版が公開されていれば自動で読み直す
+if(location.protocol.startsWith('http')) flush().then(()=>MLUpdate.check(APP_VERSION));
 </script>
 </body>
 </html>

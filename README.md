@@ -60,6 +60,12 @@ FALSE になった判断とメモした局面は何切るクイズの問題と�
 
 Mortal代役AIの学習方法・再学習の手順は `tools/local-ai/README.md` を参照してください。
 
+## 更新のしかた（版番号）
+
+更新を公開するときは、`version.json` の `v`・`index.html` の `APP_VERSION`・`local/play.js` の `VERSION`・`sw.js` の `CACHE` を同じ新しい版にする。
+アプリは起動時に `version.json` と自分の版を比べ、違えば保存済みのファイルを消して読み直す（`local/app-update.js`）。
+両方のアプリの「最新版に更新する」ボタンも、保存済みのファイルを消してから読み直す。
+
 ## データの保存
 
 問題と学習状況（正解／不正解／要復習）は端末内の **IndexedDB と localStorage の両方**に保存し、

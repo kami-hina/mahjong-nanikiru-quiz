@@ -8,7 +8,7 @@ const esc=UI.esc;
 const HUMAN=0; let CPU_MS=300;
 const ABORT={abort:true};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const VERSION='2026-10-26j';
+const VERSION='2026-10-30b'; // version.json・index.html の APP_VERSION・sw.js の CACHE と同じ版にする
 
 /* ================= 設定 ================= */
 const CFG_KEY='ml.cfg.v1';
@@ -1359,9 +1359,12 @@ async function renderSettings(){
       <button class="hbtn" id="s-exp">牌譜・メモを書き出す（JSON）</button>
       <label>書き出したJSONを読み込む</label><input type="file" id="s-imp" accept="application/json,.json">
       <p class="small muted">データは端末内（このブラウザ）だけに保存されます。機種変更や削除に備えて、ときどき書き出してください。</p></div>
+    <div class="card"><h2>アプリの更新</h2><p class="small muted">版 ${VERSION}。古い画面のままのときは、保存済みのファイルを消して読み直します（対局・復習の記録は消えません）。</p>
+      <button class="hbtn btn-g" id="s-upd">最新版に更新する</button></div>
     <div class="card"><h2>このアプリについて</h2><p class="small muted">版 ${VERSION}。ルール：半荘戦・喰いタンあり・赤ドラ3枚・ダブロンあり・西入あり（天鳳準拠）。責任払い（パオ）は未対応です。</p>
       <p class="small muted">Mortal代役AI：${AI_INFO()}。</p></div>
   </div>`;
+  $('#s-upd').onclick=()=>MLUpdate.hardReload();
   $('#s-back').onclick=renderHome;
   $$('[data-k]').forEach(b=>b.onclick=()=>{ CFG[b.dataset.k]=b.dataset.v; saveCfg(); if(b.dataset.k==='mode') applyLayout(); renderSettings(); });
   $$('[data-name]').forEach(i=>i.onchange=()=>{ CFG.names[+i.dataset.name]=i.value.trim()||CFG.names[+i.dataset.name]; saveCfg(); });
@@ -1391,6 +1394,8 @@ async function boot(){
 if('serviceWorker' in navigator&&location.protocol.startsWith('http')){
   navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
+// 新しい版が公開されていれば自動で読み直す（対局中は読み直さない）
+if(location.protocol.startsWith('http')) setTimeout(()=>{ if(SCREEN!=='game') MLUpdate.check(VERSION); },300);
 window.addEventListener('hashchange',()=>{ const m=location.hash.match(/game=([\w-]+)(?:&d=(\d+))?/); if(m) openViewer(m[1],{dec:m[2]!=null?+m[2]:null}); });
 boot();
 // テスト用に内部状態を公開

@@ -1,10 +1,10 @@
 /* オフライン対応（機内モードでも動くように、アプリ一式を端末に保存する）
    ・HTML・JS: 通信できればネットから最新を取り、できなければ（機内モードなど）保存済みを使う
    ・牌画像: 保存済みを使う（無ければネットから取って保存） */
-const CACHE='mahjong-app-v2026-10-30a';
+const CACHE='mahjong-app-v2026-10-30b';
 const ASSETS=[
   "./","index.html","play.html","isobe.html","qa.js","icon.svg","manifest.json","play-manifest.json",
-  "local/mj-core.js","local/mj-ai.js","local/ai-weights.js","local/mj-game.js","local/store.js","local/review-build.js","local/review-ids.js","local/ui-common.js","local/tenhou-export.js","local/review-data.js","local/play.js",
+  "local/mj-core.js","local/mj-ai.js","local/ai-weights.js","local/mj-game.js","local/app-update.js","local/store.js","local/review-build.js","local/review-ids.js","local/ui-common.js","local/tenhou-export.js","local/review-data.js","local/play.js",
     "tiles/0m.svg",  "tiles/0p.svg",  "tiles/0s.svg",  "tiles/1m.svg",  "tiles/1p.svg",  "tiles/1s.svg",  "tiles/1z.svg",  "tiles/2m.svg",  "tiles/2p.svg",  "tiles/2s.svg",  "tiles/2z.svg",  "tiles/3m.svg",  "tiles/3p.svg",  "tiles/3s.svg",  "tiles/3z.svg",  "tiles/4m.svg",  "tiles/4p.svg",  "tiles/4s.svg",  "tiles/4z.svg",  "tiles/5m.svg",  "tiles/5p.svg",  "tiles/5s.svg",  "tiles/5z.svg",  "tiles/6m.svg",  "tiles/6p.svg",  "tiles/6s.svg",  "tiles/6z.svg",  "tiles/7m.svg",  "tiles/7p.svg",  "tiles/7s.svg",  "tiles/7z.svg",  "tiles/8m.svg",  "tiles/8p.svg",  "tiles/8s.svg",  "tiles/9m.svg",  "tiles/9p.svg",  "tiles/9s.svg",  "tiles/back.svg"
 ];
 self.addEventListener('install',e=>{
@@ -18,6 +18,7 @@ self.addEventListener('fetch',e=>{
   if(req.method!=='GET') return;
   const url=new URL(req.url);
   if(url.origin!==location.origin) return;           // Firestore など外部への通信には触らない
+  if(url.pathname.endsWith('/version.json')) return; // 公開中の版の確認は、保存せずに毎回ネットへ
   const isTile=/\/tiles\/[^/]+\.svg$/.test(url.pathname);
   if(!isTile){
     e.respondWith((async()=>{
