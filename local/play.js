@@ -8,7 +8,7 @@ const esc=UI.esc;
 const HUMAN=0; let CPU_MS=300;
 const ABORT={abort:true};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const VERSION='2026-10-30b'; // version.json・index.html の APP_VERSION・sw.js の CACHE と同じ版にする
+const VERSION='2026-10-31a'; // version.json・index.html の APP_VERSION・sw.js の CACHE と同じ版にする
 
 /* ================= 設定 ================= */
 const CFG_KEY='ml.cfg.v1';
@@ -1126,7 +1126,8 @@ function quizSources(){
 }
 const tenhouDate=id=>{ const m=String(id||'').match(/^(\d{4})(\d\d)(\d\d)(\d\d)gm/); return m? `${m[1]}/${+m[2]}/${+m[3]} ${+m[4]}時` : ''; };
 const pct=(a,n)=>n? (a/n*100).toFixed(1)+'%' : '-';
-async function renderReviewList(set){
+// focus: 何切るクイズの「復習半荘モードに進む」から来たとき、その半荘（牌譜の id）までスクロールして目立たせる
+async function renderReviewList(set,focus){
   set=set||'main';
   show('logs');
   $('#logs').innerHTML='<div class="page"><p class="muted center">読み込み中…</p></div>';
@@ -1159,7 +1160,7 @@ async function renderReviewList(set){
     <p class="small">プレイ済み ${nPlayed} ／ ${R.length}半荘</p>
     ${R.length?'':'<p class="muted center">出題できる半荘がありません。</p>'}
     ${R.map((r,i)=>{ const g=games[r.g], st=PS.get(r.g), nw=st? st.wrong.length : 0;
-      return `<div class="item">
+      return `<div class="item" data-rid="${esc(g.id)}"${g.id===focus?' style="outline:2px solid var(--accent)"':''}>
       <div class="row" style="gap:6px;flex-wrap:wrap"><b>${i+1}位</b>${i===pos?'<span class="badge b-chk">次</span>':''}${status(st)}${g.sub?'<span class="badge">Mortal未解析・代役判定</span>':''}<span class="grow"></span>
         <span class="badge b-false">推奨率20%以下 ${r.low}回</span></div>
       ${head(r)}
@@ -1173,6 +1174,15 @@ async function renderReviewList(set){
   const ok=()=>!rvSaved()||confirm('途中の復習半荘があります。新しく始めると、途中までの記録は牌譜一覧に保存されます。よろしいですか？');
   $$('[data-rg]').forEach(b=>b.onclick=()=>{ if(ok()) rvStart(+b.dataset.rg,set); });
   $$('[data-rw]').forEach(b=>b.onclick=()=>{ const st=PS.get(+b.dataset.rw); if(st&&st.wrong.length&&ok()) rvStart(+b.dataset.rw,set,st.wrong); });
+  if(focus){ const el=$$('[data-rid]').find(x=>x.dataset.rid===focus);
+    if(el) el.scrollIntoView({block:'center'}); else toast('この半荘は復習半荘の出題一覧にありません（Mortal の解析結果が必要です）',5000); }
+}
+// play.html#review=<牌譜の id>: 何切るクイズから、その半荘のある復習半荘の出題一覧を開く
+async function openReviewFocus(id){
+  history.replaceState(null,'',location.pathname+location.search);
+  if(!await loadReviewData()){ toast('復習半荘のデータを読み込めませんでした'); return renderHome(); }
+  const g=window.ML_REVIEW.games.find(x=>x.id===id);
+  return renderReviewList(g&&g.src==='v2'?'v2':'main',id);
 }
 
 /* ================= 牌譜一覧 ================= */
@@ -1389,6 +1399,8 @@ async function boot(){
   Store.askPersist();
   const m=location.hash.match(/game=([\w-]+)(?:&d=(\d+))?/);
   if(m){ await openViewer(m[1],{dec:m[2]!=null?+m[2]:null}); return; }
+  const rv=location.hash.match(/review=([\w-]+)/);
+  if(rv) return openReviewFocus(rv[1]);
   renderHome();
 }
 if('serviceWorker' in navigator&&location.protocol.startsWith('http')){

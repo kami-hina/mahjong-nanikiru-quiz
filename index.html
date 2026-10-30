@@ -112,7 +112,7 @@ img.shot{width:100%;border-radius:10px;border:1px solid var(--line)}
 <script src="local/review-ids.js"></script>
 <script>
 "use strict";
-const APP_VERSION='2026-10-30b'; // version.json・local/play.js の VERSION・sw.js の CACHE と同じ版にする
+const APP_VERSION='2026-10-31a'; // version.json・local/play.js の VERSION・sw.js の CACHE と同じ版にする
 /* ========================= 小物 ========================= */
 const $=(s,r)=>(r||document).querySelector(s), $$=(s,r)=>Array.from((r||document).querySelectorAll(s));
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1021,17 +1021,32 @@ async function renderQuizSrc(){
   const g=(await srcGroups()).find(x=>x.key===QSRC);
   if(!g){ QSRC=null; return renderQuiz(); }
   const s=g.c;
-  view.innerHTML=`<button class="btn-ghost btn-sm" id="back">← 牌譜の選択に戻る</button>
-  <div class="card" style="margin-top:10px">
+  // この牌譜の半荘を、ローカル麻雀の復習半荘モードで打てるか（取り込んだ天鳳の牌譜・牌譜データにある半荘）
+  const rid=g.list[0].reportId, src=rid&&getSources().find(x=>x.reportId===rid);
+  const canRv=!!rid&&(src||MLStore.reviewExtraIds().has(rid)||inReviewData(rid));
+  view.innerHTML=`<div class="card">
     <h2 class="center">${esc(g.label)}</h2>
     <p class="small muted center">アップロード ${fmtDT(g.at)}<br>この牌譜の${s.total}問だけを、東1局1巡目から順番に出題します。</p>
     ${countsHTML(s,1)}
     <button class="btn-primary btn-block" data-m="auto" style="margin-top:12px">最初から順番に全部解く（${s.total}問）</button>
     <p class="small muted center" style="margin:10px 0 6px">リストをしぼる</p>
     ${modeGridHTML(s)}
-  </div>`;
+    ${canRv?`<p class="small muted center" style="margin:12px 0 6px">この半荘を打ち直す</p>
+    <button class="btn-ghost btn-block" id="gorv">復習半荘モードに進む（ローカル麻雀）</button>`:''}
+  </div>
+  <button class="btn-ghost btn-block" id="back" style="margin-top:12px">← 牌譜の選択に戻る</button>`;
   $('#back').addEventListener('click',()=>{QSRC=null;renderQuiz();});
   $$('[data-m]').forEach(b=>b.addEventListener('click',()=>startQuiz(b.dataset.m,QSRC)));
+  const rb=$('#gorv'); if(rb) rb.addEventListener('click',()=>goReview(rid,src,rb));
+}
+// 復習半荘モード（play.html）の出題一覧を、この半荘の位置で開く。まだ追加していなければ先に追加する
+async function goReview(rid,src,btn){
+  if(!MLStore.reviewExtraIds().has(rid)&&src){
+    btn.disabled=true; btn.innerHTML='<span class="spin"></span> 復習半荘モードに追加中…';
+    try{ await addSourceToReview(src,m=>{ btn.innerHTML=`<span class="spin"></span> ${esc(m)}`; }); }
+    catch(e){ btn.disabled=false; btn.textContent='復習半荘モードに進む（ローカル麻雀）'; toast('復習半荘モードに追加できませんでした：'+(e.message||e),5000); return; }
+  }
+  location.href='play.html#review='+encodeURIComponent(rid);
 }
 async function startQuiz(mode,src){
   const rec=await pickNext(null,mode,src);
